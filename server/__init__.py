@@ -1,1 +1,2 @@
 from server.connection import ConnectionManager
+from server.embedding import DistilBertEmbedding
