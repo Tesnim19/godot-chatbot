@@ -87,7 +87,7 @@ class AIAgent:
 
 
 
-agent = AIAgent()
+#agent = AIAgent()
 #agent.load_document('./public')
 #agent.generate_answer('What is the output current of the EL7411 BLDC motor?') # question
 #What is the peak current for the EL7411 motor?
