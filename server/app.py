@@ -1,9 +1,12 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from server.connection import ConnectionManager
+from server.ai_agent import AIAgent
 
 app = FastAPI()
 
 manager = ConnectionManager()
+
+agent = AIAgent()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
