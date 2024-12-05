@@ -8,3 +8,4 @@ langchain-community==0.3.8
 chromadb==0.5.20 
 langchain-huggingface==0.1.2
 sentencepiece==0.2.0
+easyocr==1.7.2 
