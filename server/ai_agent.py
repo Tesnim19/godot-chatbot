@@ -7,7 +7,7 @@ import os
 import torch
 from langchain_huggingface import HuggingFaceEmbeddings
 from transformers import T5Tokenizer, T5ForConditionalGeneration
-from helper.clean import clean_text
+from server.helper.clean import clean_text
 
 class AIAgent:
     def __init__(self):
@@ -101,7 +101,7 @@ class AIAgent:
         return answer_with_metadata
 
 
-agent = AIAgent()
-agent.load_document('./public')
-answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
-print(answer)
+#agent = AIAgent()
+#agent.load_document('./public')
+#answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
+#print(answer)
