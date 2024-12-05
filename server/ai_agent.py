@@ -1,4 +1,4 @@
-from langchain_community.document_loaders.pdf import PyPDFDirectoryLoader
+from langchain_community.document_loaders.pdf import PyPDFDirectoryLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 import langchain_core
@@ -28,6 +28,20 @@ class AIAgent:
                 metadata=doc.metadata
             )
             for doc in loaded_documents
+        ]
+        self.split_text()
+
+    def load_single_document(self, path):
+        document_loader = PyPDFLoader(path)
+        print('path: ', path)
+        loaded_document = document_loader.load()
+        print("loaded document", loaded_document)
+        self.document = [
+            langchain_core.documents.base.Document(
+                page_content=clean_text(doc.page_content),
+                metadata=doc.metadata
+            )
+            for doc in loaded_document
         ]
         self.split_text()
 

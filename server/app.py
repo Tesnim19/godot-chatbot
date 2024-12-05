@@ -7,6 +7,7 @@ app = FastAPI()
 manager = ConnectionManager()
 
 agent = AIAgent()
+agent.load_document('./public')
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -23,4 +24,6 @@ async def upload_pdf(file: UploadFile):
     contents = await file.read()
     f = open(f'./public/{file.filename}', "wb")
     f.write(contents)
+    f.close()
+    agent.load_single_document(f'./public/{file.filename}')
     return {"message": "file uploaded successfuly"}
