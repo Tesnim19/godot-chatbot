@@ -77,7 +77,7 @@ class AIAgent:
 
         if results:
             print(f"Top {len(results)} Retrieved Document(s):")
-            for i, result in enumerate(results[:3]):
+            for i, result in enumerate(results[:5]):
                 # Add document path and page number in the output
                 print(f"Document {i+1}: Path: {result.metadata.get('source')}, Page Number: {result.metadata.get('page')}, Content: {result.page_content[:500]}...")
             return results
@@ -106,16 +106,20 @@ class AIAgent:
         answer_with_metadata = []
         for result in results:
             document_info = {
-                "predicted_answer": predicted_answer,
                 "document_path": result.metadata.get('source'),
                 "page_number": result.metadata.get('page')
             }
             answer_with_metadata.append(document_info)
 
-        return answer_with_metadata
+            response = {
+                "answer": predicted_answer,
+                "metadata": answer_with_metadata
+            }
+
+        return response
 
 
-#agent = AIAgent()
-#agent.load_document('./public')
-#answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
-#print(answer)
+agent = AIAgent()
+agent.load_document('./public')
+answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
+print(answer)
