@@ -7,8 +7,9 @@ var chat_input: LineEdit
 var send_button: Button
 var upload_button: Button
 var websocket: WebSocketPeer
-var socket_url = "ws://localhost:8080"
+var socket_url = "ws://localhost:8000/ws"
 var connection_status = false
+var http_request: HTTPRequest
 
 var user_message : bool = true  # Set this based on the message sender
 var message_container : VBoxContainer  # A VBoxContainer to hold message labels
@@ -18,6 +19,9 @@ var scroll_container : ScrollContainer  # The ScrollContainer that will hold the
 func _ready():
 	setup_ui()
 	setup_websocket()
+	http_request = HTTPRequest.new()
+	add_child(http_request)
+	http_request.request_completed.connect(_on_request_completed)
 	
 	print("Application started")
 
@@ -174,7 +178,7 @@ func setup_ui():
 	
 	
 	
-# Chat output area with enhanced styling
+	# Chat output area with enhanced styling
 	var output_container = PanelContainer.new()
 	output_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	output_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -190,12 +194,12 @@ func setup_ui():
 	
 	chat_container.add_child(output_container)
 	
-  # Create a ScrollContainer for messages
+	# Create a ScrollContainer for messages
 	scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
-  # Create a VBoxContainer to hold all messages
+	# Create a VBoxContainer to hold all messages
 	message_container = VBoxContainer.new()
 	message_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	message_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -205,6 +209,7 @@ func setup_ui():
 	message_margin.add_theme_constant_override("margin_right", 12)
 	message_margin.add_theme_constant_override("margin_top", 12)
 	message_margin.add_theme_constant_override("margin_bottom", 12)
+	message_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	message_margin.add_child(message_container)
 	scroll_container.add_child(message_margin)
@@ -286,11 +291,7 @@ func _on_message_sent(text: String):
 
 func _on_pdf_selected(path: String):
 	print("PDF selected: ", path)
-	if !connection_status:
-		print("Not connected to server!")
-		add_message("System", "Not connected to server!", false)
-		return
-		
+	
 	var file = FileAccess.open(path, FileAccess.READ)
 	if !file:
 		print("Failed to open file!")
@@ -300,77 +301,36 @@ func _on_pdf_selected(path: String):
 	var file_data = file.get_buffer(file.get_length())
 	file.close()
 	
-	# Smaller chunk size to avoid WebSocket limitations
-	var chunk_size = 32 * 1024  # 32KB chunks
-	var total_size = file_data.size()
-	var current_pos = 0
-	var total_chunks = ceil(float(total_size) / chunk_size)
+	# Create multipart form data
+	var boundary = "GodotFormBoundary"
+	var body = PackedByteArray()
 	
-	# Send initial metadata message
-	var metadata = {
-		"type": "pdf_metadata",
-		"name": path.get_file(),
-		"total_size": total_size,
-		"chunk_size": chunk_size,
-		"total_chunks": total_chunks
-	}
+	# Add file data
+	var file_header = "\r\n--" + boundary + "\r\n"
+	file_header += "Content-Disposition: form-data; name=\"file\"; filename=\"" + path.get_file() + "\"\r\n"
+	file_header += "Content-Type: application/pdf\r\n\r\n"
+	body.append_array(file_header.to_utf8_buffer())
+	body.append_array(file_data)  # Append raw binary data
 	
-	var err = websocket.send_text(JSON.stringify(metadata))
-	if err != OK:
-		print("Failed to send PDF metadata: ", err)
-		add_message("System", "Failed to send PDF metadata!", false)
-		return
+	# Add closing boundary
+	var end_boundary = "\r\n--" + boundary + "--\r\n"
+	body.append_array(end_boundary.to_utf8_buffer())
 	
-	# Add slight delay between chunks to prevent overwhelming the connection
-	while current_pos < total_size:
-		var chunk_end = min(current_pos + chunk_size, total_size)
-		var chunk = file_data.slice(current_pos, chunk_end)
-		
-		var chunk_info = {
-			"type": "pdf_chunk",
-			"name": path.get_file(),
-			"chunk_index": current_pos / chunk_size,
-			"total_chunks": total_chunks,
-			"size": chunk.size(),
-			"content": Marshalls.raw_to_base64(chunk)
-		}
-		
-		var json_string = JSON.stringify(chunk_info)
-		print("Sending PDF chunk %d/%d (size: %d bytes)..." % [
-			chunk_info.chunk_index + 1, 
-			chunk_info.total_chunks,
-			chunk_info.size
-		])
-		
-		err = websocket.send_text(json_string)
-		if err != OK:
-			print("Failed to send PDF chunk: ", err)
-			add_message("System", "Failed to send PDF chunk %d/%d!" % [
-				chunk_info.chunk_index + 1,
-				chunk_info.total_chunks
-			], false)
-			return
-			
-		# Add a small delay between chunks
-		await get_tree().create_timer(0.05).timeout
-		
-		current_pos = chunk_end
+	# Set up headers
+	var headers = [
+		"Content-Type: multipart/form-data; boundary=" + boundary
+	]
 	
-	# Send completion message
-	var completion_info = {
-		"type": "pdf_complete",
-		"name": path.get_file(),
-		"total_chunks_sent": total_chunks
-	}
+	# Send request
+	var url = "http://localhost:8000/upload"  # Make sure this matches your server port
+	var error = http_request.request_raw(url, headers, HTTPClient.METHOD_POST, body)
 	
-	err = websocket.send_text(JSON.stringify(completion_info))
-	if err != OK:
-		print("Failed to send PDF completion message: ", err)
-		add_message("System", "Failed to send PDF completion message!", false)
-		return
-	
-	print("PDF sent successfully in %d chunks" % total_chunks)
-	add_message("System", "PDF sent to server: %s (%d chunks)" % [path.get_file(), total_chunks], false)
+	if error != OK:
+		print("An error occurred while uploading the PDF")
+		add_message("System", "Failed to upload PDF!", false)
+	else:
+		print("PDF upload started...")
+		add_message("System", "Uploading PDF...", false)
 
 func add_message(sender: String, text: String, is_user: bool = false, metadata = null):
 	# Create message container with full width
@@ -383,10 +343,12 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	left_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
-	# Create the message bubble
+# Create the message bubble
 	var message_bubble = PanelContainer.new()
 	message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	message_bubble.custom_minimum_size.x = 200
+	message_bubble.custom_minimum_size.x = 600  # Increased from 200 to 400
+	message_bubble.size_flags_stretch_ratio = 0.7  # This makes the bubble use up to 70% of available width
+	
 	
 	# Style the bubble
 	var bubble_style = StyleBoxFlat.new()
@@ -406,6 +368,7 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	
 	# Message content
 	var content = VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	# Sender name
 	var name_label = Label.new()
@@ -418,6 +381,7 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	text_label.text = text
 	text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_label.custom_minimum_size.x = 350
 	text_label.add_theme_color_override("font_color", Color(1, 1, 1))
 	
 	content.add_child(name_label)
@@ -450,13 +414,11 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	
 	# Add components to row in correct order for alignment
 	if is_user:
-		message_row.add_child(left_margin)
+		message_row.add_child(left_margin)  # Pushes the bubble to the right
 		message_row.add_child(message_bubble)
-		message_row.add_child(Control.new())  # Small right margin
 	else:
-		message_row.add_child(Control.new())  # Small left margin
 		message_row.add_child(message_bubble)
-		message_row.add_child(right_margin)
+		message_row.add_child(right_margin)  # Pushes the bubble to the left
 	
 	# Add to message container with spacing
 	message_container.add_child(message_row)
@@ -481,3 +443,23 @@ func _on_upload_pressed():
 	file_dialog.size = Vector2(500, 400)
 	add_child(file_dialog)
 	file_dialog.popup_centered()
+
+func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	if result != HTTPRequest.RESULT_SUCCESS:
+		print("Error during upload: ", result)
+		add_message("System", "Upload failed!", false)
+		return
+		
+	if response_code == 200:
+		print("Upload successful!")
+		add_message("System", "PDF uploaded successfully!", false)
+		
+		# Parse response if needed
+		var json = JSON.new()
+		var error = json.parse(body.get_string_from_utf8())
+		if error == OK:
+			var response = json.get_data()
+			print("Server response: ", response)
+	else:
+		print("Upload failed with code: ", response_code)
+		add_message("System", "Upload failed with code: " + str(response_code), false)
