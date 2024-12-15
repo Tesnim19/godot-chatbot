@@ -2,6 +2,7 @@ import json
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile
 from server.connection import ConnectionManager
 from server.ai_agent import AIAgent
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
@@ -9,6 +10,8 @@ manager = ConnectionManager()
 
 agent = AIAgent()
 agent.load_document('./public')
+
+app.mount("/public", StaticFiles(directory="public"), name="public")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

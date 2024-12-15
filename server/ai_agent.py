@@ -117,9 +117,3 @@ class AIAgent:
             }
 
         return response
-
-
-agent = AIAgent()
-agent.load_document('./public')
-answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
-print(answer)
