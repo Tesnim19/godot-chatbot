@@ -3,6 +3,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile
 from server.connection import ConnectionManager
 from server.ai_agent import AIAgent
 from fastapi.staticfiles import StaticFiles
+import glob
 
 app = FastAPI()
 
@@ -48,3 +49,9 @@ async def upload_pdf(file: UploadFile):
         return {"message": "File uploaded successfully"}
     except Exception as e:
         return {"error": str(e)}, 500
+
+@app.get("/documents")
+async def get_documents():
+    files = [file.split('/')[-1] for file in glob.glob("./public/*.pdf")]
+    return {"documents": files}
+    
