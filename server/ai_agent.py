@@ -16,8 +16,8 @@ class AIAgent:
         self.db = None
         self.retriver = None
         self.langchain_embeddings = HuggingFaceEmbeddings(model_name="distilbert-base-nli-stsb-mean-tokens")
-        self.model = T5ForConditionalGeneration.from_pretrained("t5-small")
-        self.t5tokenizer = T5Tokenizer.from_pretrained("t5-small")
+        self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
+        self.t5tokenizer = T5Tokenizer.from_pretrained("t5-base")
 
     def load_document(self, path):
         document_loader = PyPDFDirectoryLoader(path)
@@ -117,3 +117,8 @@ class AIAgent:
             }
 
         return response
+
+#agent = AIAgent()
+#agent.load_document('./public')
+#answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
+#print(answer

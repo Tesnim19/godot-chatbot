@@ -17,6 +17,7 @@ app.mount("/public", StaticFiles(directory="public"), name="public")
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    print('connected')
     try:
         while True:
             data = await websocket.receive_text()
@@ -25,7 +26,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if message_data.get("type") == "chat":
                 # Get the actual message content
                 query = message_data.get("content")
-                # Use the instance of AIAgent, not the class
+                # Use the instance of AIAgent
                 response = agent.generate_answer(query)
                 # Send the response back to the client
                 await manager.send(json.dumps(response))
