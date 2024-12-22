@@ -20,13 +20,7 @@ func _ready():
 	# Make sure UI is set up first
 	setup_ui()
 	
-	# Add a timer to allow the UI to properly initialize
-	var init_timer = Timer.new()
-	add_child(init_timer)
-	init_timer.wait_time = 0.5  # Half second delay
-	init_timer.one_shot = true
-	init_timer.timeout.connect(func(): _resize_messages())
-	init_timer.start()
+	scroll_container.resized.connect(_resize_messages)
 	
 	# Then set up the rest
 	setup_websocket()
@@ -42,22 +36,30 @@ func _ready():
 
 # Add a new function to handle message resizing
 func _resize_messages():
-	if message_container == null or scroll_container == null:
+	if not message_container or not scroll_container:
 		return
-		
-	if scroll_container.size.x <= 0:
-		return
-		
+	
+	var container_width = scroll_container.size.x
+	if container_width <= 0:
+		return  # Avoid invalid or uninitialized sizes
+	
+	# Determine the target width for message bubbles as a percentage of the container width
+	var target_width = container_width * 0.7  # Adjust percentage as needed (e.g., 70%)
+	
+	# Iterate over all children in the message container
 	for child in message_container.get_children():
-		if child is HBoxContainer:  # Message row
+		if child is HBoxContainer:  # Process message rows only
 			for subchild in child.get_children():
-				if subchild is PanelContainer:  # Message bubble
-					subchild.custom_minimum_size.x = scroll_container.size.x * 0.45
+				if subchild is PanelContainer:  # Resize message bubbles
+					if subchild.has_method("set_custom_minimum_size"):
+						subchild.set_custom_minimum_size(Vector2(target_width, 0))
+
+
 
 func setup_ui():
 	# Main control settings
-	anchor_right = 0.97
-	anchor_bottom = 0.95
+	anchor_right = 0.98
+	anchor_bottom = 0.96
 	
 	setup_toggle_button()
 	setup_chat_panel()
@@ -209,6 +211,7 @@ func setup_chat_interface():
 	var output_container = PanelContainer.new()
 	output_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	output_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	output_container.custom_minimum_size.y = 300
 	
 	var output_style = StyleBoxFlat.new()
 	output_style.bg_color = Color(0.18, 0.18, 0.2)
@@ -224,12 +227,12 @@ func setup_chat_interface():
 	scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	output_container.add_child(scroll_container)
+	
 	
 	# Message container
 	message_container = VBoxContainer.new()
-	message_container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	message_container.custom_minimum_size = Vector2(200, 0)
+	message_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	#message_container.custom_minimum_size = Vector2(200, 0)
 	message_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	
 	var message_margin = MarginContainer.new()
@@ -237,8 +240,11 @@ func setup_chat_interface():
 	message_margin.add_theme_constant_override("margin_right", 12)
 	message_margin.add_theme_constant_override("margin_top", 12)
 	message_margin.add_theme_constant_override("margin_bottom", 12)
+	message_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
 	message_margin.add_child(message_container)
 	scroll_container.add_child(message_margin)
+	output_container.add_child(scroll_container)
 
 func _on_toggle_chat():
 	is_chat_open = !is_chat_open
@@ -397,11 +403,24 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	var message_row = HBoxContainer.new()
 	message_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
+	# Create left and right margins/spacers
+	#var left_margin = Control.new()
+	#var right_margin = Control.new()
+	#left_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	#right_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
 	# Create message bubble
 	var message_bubble = PanelContainer.new()
-	message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	#message_bubble.custom_minimum_size.x = 500  # Increased from 200 to 400
+	#message_bubble.size_flags_stretch_ratio = 0.9  # This makes the bubble use up to 70% of available width
+	
+	message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END if is_user else Control.SIZE_SHRINK_BEGIN
+	# Set to use 70% of the container width
+	message_bubble.custom_minimum_size.x = scroll_container.size.x * 0.7
+	
 	# Set the message bubble to take approximately half the container width
-	message_bubble.custom_minimum_size.x = scroll_container.size.x * 0.45  # 45% of container width
+	#message_bubble.custom_minimum_size.x = scroll_container.size.x * 0.45  # 45% of container width
 	
 	# Style the bubble
 	var bubble_style = StyleBoxFlat.new()
@@ -465,6 +484,13 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	message_bubble.add_child(content_margin)
 	
 	# Add spacers for alignment
+	#var left_spacer = Control.new()
+	#var right_spacer = Control.new()
+	#left_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	#right_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	print(is_user)
+	
+	# Create spacers for alignment
 	var left_spacer = Control.new()
 	var right_spacer = Control.new()
 	left_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -474,9 +500,21 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	if is_user:
 		message_row.add_child(left_spacer)
 		message_row.add_child(message_bubble)
+		## Set alignment to the right
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END
+		
+		#message_row.alignment = BoxContainer.ALIGNMENT_END
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END
 	else:
 		message_row.add_child(message_bubble)
 		message_row.add_child(right_spacer)
+		## Set alignment to the left
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		# For system/assistant messages (left-aligned)
+		#message_row.alignment = BoxContainer.ALIGNMENT_BEGIN
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	
+	#message_row.add_child(message_bubble)
 	
 	# Add to message container with spacing
 	message_container.add_child(message_row)
@@ -490,36 +528,22 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	await get_tree().create_timer(0.1).timeout
 	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
 	
-	# Add to message container with spacing
-	message_container.add_child(message_row)
 	
-	# Add spacing between messages
-	#var spacer = Control.new()
-	spacer.custom_minimum_size.y = 12
-	message_container.add_child(spacer)
-	
-	# Resize the messages
-	_resize_messages()
-	
-	# Scroll to bottom after a short delay
-	await get_tree().create_timer(0.1).timeout
-	if scroll_container != null:  # Add null check here too
-		scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
-
-func _notification(what):
-	if what == NOTIFICATION_RESIZED:
-		# Add null checks
-		if message_container != null and scroll_container != null:
-			for child in message_container.get_children():
-				if child is HBoxContainer:  # Message row
-					for subchild in child.get_children():
-						if subchild is PanelContainer:  # Message bubble
-							# Make sure scroll_container has a valid size
-							if scroll_container.size.x > 0:
-								subchild.custom_minimum_size.x = scroll_container.size.x * 0.45
-							else:
-								# Use a default size if scroll container size is not yet set
-								subchild.custom_minimum_size.x = 300  # Default width
+#func _notification(what):
+	#if what == NOTIFICATION_RESIZED:
+		##_resize_messages()
+		## Add null checks
+		#if message_container != null and scroll_container != null:
+			#for child in message_container.get_children():
+				#if child is HBoxContainer:  # Message row
+					#for subchild in child.get_children():
+						#if subchild is PanelContainer:  # Message bubble
+							## Make sure scroll_container has a valid size
+							#if scroll_container.size.x > 0:
+								#subchild.custom_minimum_size.x = scroll_container.size.x * 0.7
+							#else:
+								## Use a default size if scroll container size is not yet set
+								#subchild.custom_minimum_size.x = 300  # Default width
 
 func _on_upload_pressed():
 	var file_dialog = FileDialog.new()
