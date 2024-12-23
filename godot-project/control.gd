@@ -10,6 +10,7 @@ var connection_status = false
 var http_request: HTTPRequest
 var message_container: VBoxContainer
 var scroll_container: ScrollContainer
+var fetch_documents_button: Button
 
 # New UI elements
 var chat_panel: PanelContainer
@@ -64,6 +65,47 @@ func setup_ui():
 	setup_toggle_button()
 	setup_chat_panel()
 	chat_panel.hide()
+
+#func _on_fetch_documents_pressed():
+	#var http_request = HTTPRequest.new()
+	#add_child(http_request)
+	#var url = "http://localhost:8000/documents"  # Adjust this to your server's URL
+	#var error = http_request.request(url)
+#
+	#if error != OK:
+		#print("Failed to send request: ", error)
+		#add_message("System", "Failed to fetch documents!", false)
+	#else:
+		#http_request.request_completed.connect(_on_documents_fetched)
+
+#func _on_documents_fetched(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	#if result != HTTPRequest.RESULT_SUCCESS:
+		#print("Error during fetch: ", result)
+		#add_message("System", "Failed to fetch documents!", false)
+		#return
+#
+	#if response_code == 200:
+		#var json = JSON.new()
+		#var error = json.parse(body.get_string_from_utf8())
+		#if error == OK:
+			#var response = json.get_data()
+			#var documents = response.get("documents", [])
+			#_populate_document_menu(documents)
+		#else:
+			#print("Failed to parse JSON response")
+			#add_message("System", "Failed to parse documents response!", false)
+	#else:
+		#print("Fetch failed with code: ", response_code)
+		#add_message("System", "Fetch failed with code: " + str(response_code), false)
+
+#func _populate_document_menu(documents: Array):
+	#var popup = fetch_documents_button.get_popup()
+	#popup.clear()  # Clear previous items
+#
+	#for doc in documents:
+		#popup.add_item(doc)  # Add each document to the dropdown menu
+#
+	#popup._popup()  # Show the dropdown menu
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -125,6 +167,12 @@ func setup_chat_interface():
 	title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
+	
+	## Create a button to fetch documents
+	#fetch_documents_button = MenuButton.new()
+	#fetch_documents_button.text = "Fetch Documents"
+	#fetch_documents_button.connect("pressed", _on_fetch_documents_pressed)
+	#header.add_child(fetch_documents_button)
 	
 	var close_button = Button.new()
 	close_button.text = "×"
@@ -470,12 +518,20 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		metadata_container.add_child(refs_label)
 		
 		for ref in metadata:
-			var ref_label = Label.new()
+			var ref_button = Button.new()
 			var pdf_name = ref.document_path.get_file()
-			ref_label.text = "• %s (Page %d)" % [pdf_name, ref.page_number]
-			ref_label.add_theme_font_size_override("font_size", 10)
-			ref_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.8))
-			metadata_container.add_child(ref_label)
+			ref_button.text = "• %s (Page %d)" % [pdf_name, ref.page_number]
+			ref_button.flat = true
+			ref_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			ref_button.add_theme_font_size_override("font_size", 10)
+			ref_button.add_theme_color_override("font_color", Color(0.6, 0.6, 0.8))
+			ref_button.add_theme_color_override("font_hover_color", Color(0.7, 0.7, 1.0))
+			
+			# Create a reference to the document path and page number
+			var ref_data = {"path": ref.document_path, "page": ref.page_number}
+			ref_button.pressed.connect(_on_reference_clicked.bind(ref_data))
+			
+			metadata_container.add_child(ref_button)
 		
 		content.add_child(metadata_container)
 	
@@ -528,7 +584,19 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	await get_tree().create_timer(0.1).timeout
 	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
 	
+func _on_reference_clicked(ref_data: Dictionary):
+	# Open PDF with the system's default PDF reader
+	var path = ref_data.path
+	var page = ref_data.page
 	
+	if OS.has_feature("windows"):
+		OS.shell_open(path + "#page=" + str(page))
+	elif OS.has_feature("macos"):
+		OS.execute("open", [path])  # macOS doesn't support direct page opening
+	elif OS.has_feature("linux"):
+		OS.execute("xdg-open", [path])  # Linux doesn't support direct page opening
+	else:
+		print("Unsupported platform for opening PDFs")	
 #func _notification(what):
 	#if what == NOTIFICATION_RESIZED:
 		##_resize_messages()
