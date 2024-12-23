@@ -10,6 +10,7 @@ var connection_status = false
 var http_request: HTTPRequest
 var message_container: VBoxContainer
 var scroll_container: ScrollContainer
+var fetch_documents_button: Button
 
 # New UI elements
 var chat_panel: PanelContainer
@@ -64,6 +65,47 @@ func setup_ui():
 	setup_toggle_button()
 	setup_chat_panel()
 	chat_panel.hide()
+
+#func _on_fetch_documents_pressed():
+	#var http_request = HTTPRequest.new()
+	#add_child(http_request)
+	#var url = "http://localhost:8000/documents"  # Adjust this to your server's URL
+	#var error = http_request.request(url)
+#
+	#if error != OK:
+		#print("Failed to send request: ", error)
+		#add_message("System", "Failed to fetch documents!", false)
+	#else:
+		#http_request.request_completed.connect(_on_documents_fetched)
+
+#func _on_documents_fetched(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	#if result != HTTPRequest.RESULT_SUCCESS:
+		#print("Error during fetch: ", result)
+		#add_message("System", "Failed to fetch documents!", false)
+		#return
+#
+	#if response_code == 200:
+		#var json = JSON.new()
+		#var error = json.parse(body.get_string_from_utf8())
+		#if error == OK:
+			#var response = json.get_data()
+			#var documents = response.get("documents", [])
+			#_populate_document_menu(documents)
+		#else:
+			#print("Failed to parse JSON response")
+			#add_message("System", "Failed to parse documents response!", false)
+	#else:
+		#print("Fetch failed with code: ", response_code)
+		#add_message("System", "Fetch failed with code: " + str(response_code), false)
+
+#func _populate_document_menu(documents: Array):
+	#var popup = fetch_documents_button.get_popup()
+	#popup.clear()  # Clear previous items
+#
+	#for doc in documents:
+		#popup.add_item(doc)  # Add each document to the dropdown menu
+#
+	#popup._popup()  # Show the dropdown menu
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -125,6 +167,12 @@ func setup_chat_interface():
 	title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
+	
+	## Create a button to fetch documents
+	#fetch_documents_button = MenuButton.new()
+	#fetch_documents_button.text = "Fetch Documents"
+	#fetch_documents_button.connect("pressed", _on_fetch_documents_pressed)
+	#header.add_child(fetch_documents_button)
 	
 	var close_button = Button.new()
 	close_button.text = "×"
@@ -458,7 +506,7 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	content.add_child(name_label)
 	content.add_child(text_label)
 	
-	# Add metadata if present
+	# Handle metadata if present
 	if metadata != null and metadata.size() > 0:
 		var metadata_container = VBoxContainer.new()
 		metadata_container.add_theme_constant_override("separation", 4)
@@ -470,12 +518,22 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		metadata_container.add_child(refs_label)
 		
 		for ref in metadata:
-			var ref_label = Label.new()
-			var pdf_name = ref.document_path.get_file()
-			ref_label.text = "• %s (Page %d)" % [pdf_name, ref.page_number]
-			ref_label.add_theme_font_size_override("font_size", 10)
-			ref_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.8))
-			metadata_container.add_child(ref_label)
+			# Adjust document path to match the Godot project directory
+			ref.document_path = "res://pdfs/" + ref.document_path.get_file()
+			var ref_button = Button.new()
+			var pdf_name = ref["document_path"].get_file()  # Extract file name from path
+			ref_button.text = "• %s (Page %d)" % [pdf_name, ref["page_number"]]
+			ref_button.flat = true
+			ref_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			ref_button.add_theme_font_size_override("font_size", 10)
+			ref_button.add_theme_color_override("font_color", Color(0.6, 0.6, 0.8))
+			ref_button.add_theme_color_override("font_hover_color", Color(0.7, 0.7, 1.0))
+			
+			# Store reference data to pass to the callback
+			var ref_data = {"path": ref["document_path"], "page": ref["page_number"]}
+			ref_button.pressed.connect(_on_reference_clicked.bind(ref_data))
+			
+			metadata_container.add_child(ref_button)
 		
 		content.add_child(metadata_container)
 	
@@ -528,7 +586,61 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	await get_tree().create_timer(0.1).timeout
 	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
 	
+func _on_reference_clicked(ref_data: Dictionary):
+	# Extract path and page from ref_data
+	var document_path = ref_data["path"]
+	var page = ref_data["page"]
 	
+	# Get just the filename from the path
+	var filename = document_path.get_file()
+	print("filename: ", filename)
+	
+	# Construct the local path relative to the project's pdfs directory
+	var local_path = ProjectSettings.globalize_path("res://pdfs/" + filename)
+	print("local_path: ", local_path)
+	
+	# More detailed file existence check
+	var file_check_path = "res://pdfs/" + filename
+	if not FileAccess.file_exists(file_check_path):
+		print("File not found in project directory: ", file_check_path)
+		add_message("System", "Error: PDF file not found!", false)
+		return
+		
+	# Try to open the file directly with the OS
+	var error_code
+	if OS.has_feature("windows"):
+		print("Attempting to open on Windows...")
+		# Try both methods
+		var pdf_url = "file:///" + local_path.replace("\\", "/") + "#page=" + str(page)
+		print("Opening PDF with URL: ", pdf_url)
+		error_code = OS.shell_open(pdf_url)
+		#error_code = OS.shell_open(local_path)
+		if error_code != OK:
+			print("shell_open failed with error: ", error_code)
+			# Try alternative method
+			error_code = OS.execute("cmd", ["/c", "start", "", local_path])
+			print("cmd execute result: ", error_code)
+	elif OS.has_feature("macos"):
+		print("Attempting to open on macOS...")
+		error_code = OS.execute("open", [local_path])
+		print("open command result: ", error_code)
+	elif OS.has_feature("linux"):
+		print("Attempting to open on Linux...")
+		error_code = OS.execute("xdg-open", [local_path])
+		print("xdg-open command result: ", error_code)
+	else:
+		print("Unsupported platform")
+		add_message("System", "Error: Unsupported platform for opening PDFs!", false)
+		return
+		
+	if error_code != OK:
+		print("Failed to open PDF. Error code: ", error_code)
+		add_message("System", "Error: Failed to open PDF!", false)
+
+		
+
+
+
 #func _notification(what):
 	#if what == NOTIFICATION_RESIZED:
 		##_resize_messages()
