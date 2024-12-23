@@ -1,5 +1,5 @@
 import json
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, Form
 from server.connection import ConnectionManager
 from server.ai_agent import AIAgent
 from fastapi.staticfiles import StaticFiles
@@ -39,13 +39,13 @@ async def websocket_endpoint(websocket: WebSocket):
         await manager.send(json.dumps(error_response))
 
 @app.post("/upload")
-async def upload_pdf(file: UploadFile):
+async def upload_pdf(file: UploadFile, original_file_path: str = Form(...)):
     try:
         contents = await file.read()
         with open(f'./public/{file.filename}', "wb") as f:
             f.write(contents)
         
-        agent.load_single_document(f'./public/{file.filename}')
+        agent.load_single_document(f'./public/{file.filename}', original_file_path)
         return {"message": "File uploaded successfully"}
     except Exception as e:
         return {"error": str(e)}, 500

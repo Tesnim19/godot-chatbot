@@ -31,7 +31,7 @@ class AIAgent:
         ]
         self.split_text()
 
-    def load_single_document(self, path):
+    def load_single_document(self, path, original_file_path):
         document_loader = PyPDFLoader(path)
         print('path: ', path)
         loaded_document = document_loader.load()
@@ -39,10 +39,15 @@ class AIAgent:
         self.document = [
             langchain_core.documents.base.Document(
                 page_content=clean_text(doc.page_content),
-                metadata=doc.metadata
+                metadata={
+                    **doc.metadata,
+                    "original_file_path": original_file_path
+                }
             )
             for doc in loaded_document
         ]
+
+        print("document: ", self.document)
         self.split_text()
 
     def split_text(self):
@@ -107,7 +112,8 @@ class AIAgent:
         for result in results:
             document_info = {
                 "document_path": result.metadata.get('source'),
-                "page_number": result.metadata.get('page')
+                "page_number": result.metadata.get('page'),
+                "orignal_file_path": result.metadata.get('original_file_path')
             }
             answer_with_metadata.append(document_info)
 
