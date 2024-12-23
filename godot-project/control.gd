@@ -170,11 +170,24 @@ func setup_chat_interface():
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
 	
-	## Create a button to fetch documents
-	#fetch_documents_button = MenuButton.new()
-	#fetch_documents_button.text = "Fetch Documents"
-	#fetch_documents_button.connect("pressed", _on_fetch_documents_pressed)
-	#header.add_child(fetch_documents_button)
+	#Button for displaying documents
+	fetch_documents_button = MenuButton.new()
+	fetch_documents_button.text = "Documents"
+	fetch_documents_button.custom_minimum_size = Vector2(100, 0)  # Give it some minimum width
+	var popup = fetch_documents_button.get_popup()
+	fetch_documents_button.pressed.connect(_on_fetch_documents_pressed)
+	
+	# Style the documents button
+	var docs_button_style = StyleBoxFlat.new()
+	docs_button_style.bg_color = Color(0.2, 0.4, 0.8)  # Match your color scheme
+	docs_button_style.corner_radius_top_left = 6
+	docs_button_style.corner_radius_top_right = 6
+	docs_button_style.corner_radius_bottom_left = 6
+	docs_button_style.corner_radius_bottom_right = 6
+
+	fetch_documents_button.add_theme_stylebox_override("normal", docs_button_style)
+
+	header.add_child(fetch_documents_button)
 	
 	var close_button = Button.new()
 	close_button.text = "×"
