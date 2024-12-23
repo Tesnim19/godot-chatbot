@@ -506,7 +506,7 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	content.add_child(name_label)
 	content.add_child(text_label)
 	
-	# Add metadata if present
+	# Handle metadata if present
 	if metadata != null and metadata.size() > 0:
 		var metadata_container = VBoxContainer.new()
 		metadata_container.add_theme_constant_override("separation", 4)
@@ -518,17 +518,19 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		metadata_container.add_child(refs_label)
 		
 		for ref in metadata:
+			# Adjust document path to match the Godot project directory
+			ref.document_path = "res://pdfs/" + ref.document_path.get_file()
 			var ref_button = Button.new()
-			var pdf_name = ref.document_path.get_file()
-			ref_button.text = "• %s (Page %d)" % [pdf_name, ref.page_number]
+			var pdf_name = ref["document_path"].get_file()  # Extract file name from path
+			ref_button.text = "• %s (Page %d)" % [pdf_name, ref["page_number"]]
 			ref_button.flat = true
 			ref_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			ref_button.add_theme_font_size_override("font_size", 10)
 			ref_button.add_theme_color_override("font_color", Color(0.6, 0.6, 0.8))
 			ref_button.add_theme_color_override("font_hover_color", Color(0.7, 0.7, 1.0))
 			
-			# Create a reference to the document path and page number
-			var ref_data = {"path": ref.document_path, "page": ref.page_number}
+			# Store reference data to pass to the callback
+			var ref_data = {"path": ref["document_path"], "page": ref["page_number"]}
 			ref_button.pressed.connect(_on_reference_clicked.bind(ref_data))
 			
 			metadata_container.add_child(ref_button)
@@ -585,18 +587,60 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
 	
 func _on_reference_clicked(ref_data: Dictionary):
-	# Open PDF with the system's default PDF reader
-	var path = ref_data.path
-	var page = ref_data.page
+	# Extract path and page from ref_data
+	var document_path = ref_data["path"]
+	var page = ref_data["page"]
 	
+	# Get just the filename from the path
+	var filename = document_path.get_file()
+	print("filename: ", filename)
+	
+	# Construct the local path relative to the project's pdfs directory
+	var local_path = ProjectSettings.globalize_path("res://pdfs/" + filename)
+	print("local_path: ", local_path)
+	
+	# More detailed file existence check
+	var file_check_path = "res://pdfs/" + filename
+	if not FileAccess.file_exists(file_check_path):
+		print("File not found in project directory: ", file_check_path)
+		add_message("System", "Error: PDF file not found!", false)
+		return
+		
+	# Try to open the file directly with the OS
+	var error_code
 	if OS.has_feature("windows"):
-		OS.shell_open(path + "#page=" + str(page))
+		print("Attempting to open on Windows...")
+		# Try both methods
+		var pdf_url = "file:///" + local_path.replace("\\", "/") + "#page=" + str(page)
+		print("Opening PDF with URL: ", pdf_url)
+		error_code = OS.shell_open(pdf_url)
+		#error_code = OS.shell_open(local_path)
+		if error_code != OK:
+			print("shell_open failed with error: ", error_code)
+			# Try alternative method
+			error_code = OS.execute("cmd", ["/c", "start", "", local_path])
+			print("cmd execute result: ", error_code)
 	elif OS.has_feature("macos"):
-		OS.execute("open", [path])  # macOS doesn't support direct page opening
+		print("Attempting to open on macOS...")
+		error_code = OS.execute("open", [local_path])
+		print("open command result: ", error_code)
 	elif OS.has_feature("linux"):
-		OS.execute("xdg-open", [path])  # Linux doesn't support direct page opening
+		print("Attempting to open on Linux...")
+		error_code = OS.execute("xdg-open", [local_path])
+		print("xdg-open command result: ", error_code)
 	else:
-		print("Unsupported platform for opening PDFs")	
+		print("Unsupported platform")
+		add_message("System", "Error: Unsupported platform for opening PDFs!", false)
+		return
+		
+	if error_code != OK:
+		print("Failed to open PDF. Error code: ", error_code)
+		add_message("System", "Error: Failed to open PDF!", false)
+
+		
+
+
+
 #func _notification(what):
 	#if what == NOTIFICATION_RESIZED:
 		##_resize_messages()
