@@ -4,6 +4,8 @@ from server.connection import ConnectionManager
 from server.ai_agent import AIAgent
 from fastapi.staticfiles import StaticFiles
 import glob
+import os
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -53,6 +55,10 @@ async def upload_pdf(file: UploadFile):
 
 @app.get("/documents")
 async def get_documents():
-    files = [file.split('/')[-1] for file in glob.glob("./public/*.pdf")]
-    return {"documents": files}
+    try:
+        # Use os.listdir for faster access
+        files = [f for f in os.listdir("./public") if f.endswith('.pdf')]
+        return JSONResponse(content={"documents": files})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
     
