@@ -66,46 +66,48 @@ func setup_ui():
 	setup_chat_panel()
 	chat_panel.hide()
 
-#func _on_fetch_documents_pressed():
-	#var http_request = HTTPRequest.new()
-	#add_child(http_request)
-	#var url = "http://localhost:8000/documents"  # Adjust this to your server's URL
-	#var error = http_request.request(url)
-#
-	#if error != OK:
-		#print("Failed to send request: ", error)
-		#add_message("System", "Failed to fetch documents!", false)
-	#else:
-		#http_request.request_completed.connect(_on_documents_fetched)
+func _on_fetch_documents_pressed():
+	var http_request = HTTPRequest.new()
+	add_child(http_request)
+	var url = "http://localhost:8000/documents"  # Adjust this to your server's URL
+	var error = http_request.request(url)
+	
+	if error != OK:
+		print("Failed to send request: ", error)
+		add_message("System", "Failed to fetch documents!", false)
+	else:
+		http_request.request_completed.connect(_on_documents_fetched)
 
-#func _on_documents_fetched(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
-	#if result != HTTPRequest.RESULT_SUCCESS:
-		#print("Error during fetch: ", result)
-		#add_message("System", "Failed to fetch documents!", false)
-		#return
-#
-	#if response_code == 200:
-		#var json = JSON.new()
-		#var error = json.parse(body.get_string_from_utf8())
-		#if error == OK:
-			#var response = json.get_data()
-			#var documents = response.get("documents", [])
-			#_populate_document_menu(documents)
-		#else:
-			#print("Failed to parse JSON response")
-			#add_message("System", "Failed to parse documents response!", false)
-	#else:
-		#print("Fetch failed with code: ", response_code)
-		#add_message("System", "Fetch failed with code: " + str(response_code), false)
+func _on_documents_fetched(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	if result != HTTPRequest.RESULT_SUCCESS:
+		print("Error during fetch: ", result)
+		add_message("System", "Failed to fetch documents!", false)
+		return
+	
+	if response_code == 200:
+		var json = JSON.new()
+		var error = json.parse(body.get_string_from_utf8())
+		if error == OK:
+			var response = json.get_data()
+			var documents = response.get("documents", [])
+			_populate_document_menu(documents)
+		else:
+			print("Failed to parse JSON response")
+			add_message("System", "Failed to parse documents response!", false)
+	else:
+		print("Fetch failed with code: ", response_code)
+		add_message("System", "Fetch failed with code: " + str(response_code), false)
 
-#func _populate_document_menu(documents: Array):
-	#var popup = fetch_documents_button.get_popup()
-	#popup.clear()  # Clear previous items
-#
-	#for doc in documents:
-		#popup.add_item(doc)  # Add each document to the dropdown menu
-#
-	#popup._popup()  # Show the dropdown menu
+func _populate_document_menu(documents: Array):
+	var popup = fetch_documents_button.get_popup()
+	popup.clear()  # Clear previous items
+	
+	# Add each document to the dropdown menu
+	for doc in documents:
+		popup.add_item(doc)
+	
+	# Show the dropdown menu
+	popup.popup()
 
 func setup_toggle_button():
 	toggle_button = Button.new()
