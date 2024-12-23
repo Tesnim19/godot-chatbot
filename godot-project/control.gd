@@ -1,8 +1,6 @@
 extends Control
 
 var chat_container: VBoxContainer
-var chat_output: RichTextLabel
-var input_container: HBoxContainer
 var chat_input: LineEdit
 var send_button: Button
 var upload_button: Button
@@ -10,75 +8,133 @@ var websocket: WebSocketPeer
 var socket_url = "ws://localhost:8000/ws"
 var connection_status = false
 var http_request: HTTPRequest
+var message_container: VBoxContainer
+var scroll_container: ScrollContainer
 
-var user_message : bool = true  # Set this based on the message sender
-var message_container : VBoxContainer  # A VBoxContainer to hold message labels
-var scroll_container : ScrollContainer  # The ScrollContainer that will hold the VBoxContainer
-
+# New UI elements
+var chat_panel: PanelContainer
+var toggle_button: Button
+var is_chat_open = false
 
 func _ready():
+	# Make sure UI is set up first
 	setup_ui()
+	
+	scroll_container.resized.connect(_resize_messages)
+	
+	# Then set up the rest
 	setup_websocket()
 	http_request = HTTPRequest.new()
 	add_child(http_request)
 	http_request.request_completed.connect(_on_request_completed)
 	
-	print("Application started")
+	var connection_timer = Timer.new()
+	add_child(connection_timer)
+	connection_timer.wait_time = 15.0
+	connection_timer.timeout.connect(_on_connection_timer_timeout)
+	connection_timer.start()
+
+# Add a new function to handle message resizing
+func _resize_messages():
+	if not message_container or not scroll_container:
+		return
+	
+	var container_width = scroll_container.size.x
+	if container_width <= 0:
+		return  # Avoid invalid or uninitialized sizes
+	
+	# Determine the target width for message bubbles as a percentage of the container width
+	var target_width = container_width * 0.7  # Adjust percentage as needed (e.g., 70%)
+	
+	# Iterate over all children in the message container
+	for child in message_container.get_children():
+		if child is HBoxContainer:  # Process message rows only
+			for subchild in child.get_children():
+				if subchild is PanelContainer:  # Resize message bubbles
+					if subchild.has_method("set_custom_minimum_size"):
+						subchild.set_custom_minimum_size(Vector2(target_width, 0))
+
+
 
 func setup_ui():
-	# Set the main control (self) to fill the viewport with a minimum size
-	custom_minimum_size = Vector2(800, 600)
-	anchor_right = 1
-	anchor_bottom = 1
+	# Main control settings
+	anchor_right = 0.98
+	anchor_bottom = 0.96
 	
-	# Create a background panel for the entire UI
-	var background_panel = PanelContainer.new()
-	background_panel.anchor_right = 1
-	background_panel.anchor_bottom = 1
+	setup_toggle_button()
+	setup_chat_panel()
+	chat_panel.hide()
+
+func setup_toggle_button():
+	toggle_button = Button.new()
+	toggle_button.text = "Chat"
+	toggle_button.custom_minimum_size = Vector2(60, 60)
+	toggle_button.anchor_left = 1
+	toggle_button.anchor_top = 1
+	toggle_button.anchor_right = 1
+	toggle_button.anchor_bottom = 1
+	toggle_button.position = Vector2(-80, -80)
 	
-	var background_style = StyleBoxFlat.new()
-	background_style.bg_color = Color(0.12, 0.12, 0.14) # Dark background
-	background_style.shadow_size = 4
-	add_child(background_panel)
-	background_panel.add_theme_stylebox_override("panel", background_style)
+	var toggle_style = StyleBoxFlat.new()
+	toggle_style.bg_color = Color(0.2, 0.7, 0.4)
+	toggle_style.corner_radius_top_left = 30
+	toggle_style.corner_radius_top_right = 30
+	toggle_style.corner_radius_bottom_left = 30
+	toggle_style.corner_radius_bottom_right = 30
 	
-	# Add margins around the main container
+	toggle_button.add_theme_stylebox_override("normal", toggle_style)
+	toggle_button.pressed.connect(_on_toggle_chat)
+	add_child(toggle_button)
+
+func setup_chat_panel():
+	chat_panel = PanelContainer.new()
+	chat_panel.anchor_left = 0.5
+	chat_panel.anchor_top = 0
+	chat_panel.anchor_right = 1
+	chat_panel.anchor_bottom = 1
+	
+	var panel_style = StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.12, 0.12, 0.14)
+	panel_style.shadow_size = 4
+	chat_panel.add_theme_stylebox_override("panel", panel_style)
+	
+	setup_chat_interface()
+	add_child(chat_panel)
+
+func setup_chat_interface():
+	# Create margin container for padding
 	var margin_container = MarginContainer.new()
-	margin_container.anchor_left = 0
-	margin_container.anchor_top = 0
-	margin_container.anchor_right = 1
-	margin_container.anchor_bottom = 1
-
 	margin_container.add_theme_constant_override("margin_left", 20)
-	margin_container.add_theme_constant_override("margin_right", 60)
+	margin_container.add_theme_constant_override("margin_right", 20)
 	margin_container.add_theme_constant_override("margin_top", 20)
-	margin_container.add_theme_constant_override("margin_bottom", 60)
-	background_panel.add_child(margin_container)
+	margin_container.add_theme_constant_override("margin_bottom", 20)
+	chat_panel.add_child(margin_container)
 	
-	# Main layout using VBoxContainer
+	# Main chat container
 	chat_container = VBoxContainer.new()
-	chat_container.anchor_left = 0
-	chat_container.anchor_top = 0
-	chat_container.anchor_right = 1
-	chat_container.anchor_bottom = 1
-
-	chat_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chat_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin_container.add_child(chat_container)
 	
-	# Title section
-	var title_container = HBoxContainer.new()
-	title_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	chat_container.add_child(title_container)
+	# Header with title and close button
+	var header = HBoxContainer.new()
+	chat_container.add_child(header)
 	
-	var title_label = Label.new()
-	title_label.text = "Chat Assistant"
-	title_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
-	title_label.add_theme_font_size_override("font_size", 24)
-	title_container.add_child(title_label)
+	var title = Label.new()
+	title.text = "Chat Assistant"
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
 	
-	# Input container at the top
-	input_container = HBoxContainer.new()
+	var close_button = Button.new()
+	close_button.text = "×"
+	close_button.flat = true
+	close_button.add_theme_font_size_override("font_size", 24)
+	close_button.pressed.connect(_on_toggle_chat)
+	header.add_child(close_button)
+	
+	# Input container with upload and chat input
+	var input_container = HBoxContainer.new()
 	input_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chat_container.add_child(input_container)
 	
@@ -95,18 +151,7 @@ func setup_ui():
 	upload_button_style.corner_radius_bottom_left = 6
 	upload_button_style.corner_radius_bottom_right = 6
 	
-	var upload_button_hover_style = upload_button_style.duplicate()
-	upload_button_hover_style.bg_color = Color(0.25, 0.45, 0.85)
-	
-	var upload_button_pressed_style = upload_button_style.duplicate()
-	upload_button_pressed_style.bg_color = Color(0.15, 0.35, 0.75)
-	
 	upload_button.add_theme_stylebox_override("normal", upload_button_style)
-	upload_button.add_theme_stylebox_override("hover", upload_button_hover_style)
-	upload_button.add_theme_stylebox_override("pressed", upload_button_pressed_style)
-	upload_button.add_theme_color_override("font_color", Color.WHITE)
-	upload_button.add_theme_color_override("font_hover_color", Color.WHITE)
-	upload_button.add_theme_color_override("font_pressed_color", Color.WHITE)
 	input_container.add_child(upload_button)
 	
 	# Spacing between buttons
@@ -134,9 +179,6 @@ func setup_ui():
 	input_style.corner_radius_bottom_right = 6
 	
 	chat_input.add_theme_stylebox_override("normal", input_style)
-	chat_input.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
-	chat_input.add_theme_color_override("font_placeholder_color", Color(0.5, 0.5, 0.55))
-	chat_input.add_theme_font_size_override("font_size", 14)
 	input_container.add_child(chat_input)
 	
 	# Spacing between input and send button
@@ -157,18 +199,7 @@ func setup_ui():
 	send_button_style.corner_radius_bottom_left = 6
 	send_button_style.corner_radius_bottom_right = 6
 	
-	var send_button_hover_style = send_button_style.duplicate()
-	send_button_hover_style.bg_color = Color(0.25, 0.75, 0.45)
-	
-	var send_button_pressed_style = send_button_style.duplicate()
-	send_button_pressed_style.bg_color = Color(0.15, 0.65, 0.35)
-	
 	send_button.add_theme_stylebox_override("normal", send_button_style)
-	send_button.add_theme_stylebox_override("hover", send_button_hover_style)
-	send_button.add_theme_stylebox_override("pressed", send_button_pressed_style)
-	send_button.add_theme_color_override("font_color", Color.WHITE)
-	send_button.add_theme_color_override("font_hover_color", Color.WHITE)
-	send_button.add_theme_color_override("font_pressed_color", Color.WHITE)
 	input_container.add_child(send_button)
 	
 	# Spacing after input section
@@ -176,9 +207,7 @@ func setup_ui():
 	input_section_spacer.custom_minimum_size.y = 15
 	chat_container.add_child(input_section_spacer)
 	
-	
-	
-	# Chat output area with enhanced styling
+	# Chat output area
 	var output_container = PanelContainer.new()
 	output_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	output_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -194,14 +223,16 @@ func setup_ui():
 	
 	chat_container.add_child(output_container)
 	
-	# Create a ScrollContainer for messages
+	# Scroll container for messages
 	scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
-	# Create a VBoxContainer to hold all messages
+	
+	# Message container
 	message_container = VBoxContainer.new()
 	message_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	#message_container.custom_minimum_size = Vector2(200, 0)
 	message_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	
 	var message_margin = MarginContainer.new()
@@ -215,15 +246,31 @@ func setup_ui():
 	scroll_container.add_child(message_margin)
 	output_container.add_child(scroll_container)
 
+func _on_toggle_chat():
+	is_chat_open = !is_chat_open
+	if is_chat_open:
+		chat_panel.show()
+		toggle_button.hide()
+	else:
+		chat_panel.hide()
+		toggle_button.show()
+
 func setup_websocket():
 	websocket = WebSocketPeer.new()
+	_attempt_connection()
+
+func _attempt_connection():
 	var err = websocket.connect_to_url(socket_url)
 	if err != OK:
-		print("Failed to connect to WebSocket server: ", err)
-		add_message("System", "Failed to connect to server!", false)
+		print("Waiting to connect to WebSocket server: ", err)
+		add_message("System", "Waiting to connect to server!", false)
 	else:
-		print("Attempting to connect to WebSocket server...", false)
-		add_message("System", "Attempting to connect to server...", false)
+		print("Attempting to connect to WebSocket server...")
+
+func _on_connection_timer_timeout():
+	if !connection_status:
+		print("Attempting to reconnect...")
+		_attempt_connection()
 
 func _process(_delta):
 	if websocket:
@@ -233,36 +280,55 @@ func _process(_delta):
 		match state:
 			WebSocketPeer.STATE_OPEN:
 				if !connection_status:
-					print("Connected to server!") # Keep console logging for debugging
+					print("Connected to server!")
 					connection_status = true
-				# Check for messages
+					add_message("System", "Connected to server!", false)
+				
 				while websocket.get_available_packet_count():
 					var packet = websocket.get_packet()
 					var message = packet.get_string_from_utf8()
-					print("Received message: ", message) # Keep console logging for debugging
-					
-					# Try to parse as JSON
-					var json = JSON.new()
-					var error = json.parse(message)
-					if error == OK:
-						var response = json.get_data()
-						if response.has("answer"):
-							# Handle structured response with metadata
-							var answer_text = response.answer
-							var metadata = response.get("metadata", [])
-							add_message("Assistant", answer_text, false, metadata)
-						else:
-							# Handle regular chat messages
-							match response.get("type"):
-								"chat":
-									add_message("Assistant", response.get("message"), false)
-								"error", "chunk_received", "transfer_complete":
-									print(response.get("message")) # Only log to console
-								_:
-									add_message("Assistant", message, false)
-					else:
-						# Fallback for non-JSON messages
+					_handle_websocket_message(message)
+			
+			WebSocketPeer.STATE_CLOSING, WebSocketPeer.STATE_CLOSED:
+				if connection_status:
+					print("Disconnected from server")
+					connection_status = false
+					add_message("System", "Disconnected from server!", false)
+
+func _handle_websocket_message(message: String):
+	print("Received message: ", message) # Debug logging
+	
+	# Try to parse as JSON
+	var json = JSON.new()
+	var error = json.parse(message)
+	if error == OK:
+		var response = json.get_data()
+		if response is Dictionary:
+			if response.has("answer"):
+				# Handle structured response with metadata
+				var answer_text = response.answer
+				var metadata = response.get("metadata", [])
+				add_message("Assistant", answer_text, false, metadata)
+			else:
+				# Handle different message types
+				match response.get("type"):
+					"chat":
+						add_message("Assistant", response.get("message"), false)
+					"error":
+						print("Error from server: ", response.get("message"))
+						add_message("System", "Error: " + response.get("message"), false)
+					"chunk_received":
+						print("Chunk received: ", response.get("message"))
+						# Optionally handle chunk notifications
+					"transfer_complete":
+						print("Transfer complete: ", response.get("message"))
+						# Optionally handle transfer completion
+					_:
+						# Default case for unknown message types
 						add_message("Assistant", message, false)
+	else:
+		# Handle non-JSON messages
+		add_message("Assistant", message, false)
 
 func _on_send_pressed():
 	if chat_input.text.strip_edges() != "":
@@ -338,17 +404,23 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	message_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	# Create left and right margins/spacers
-	var left_margin = Control.new()
-	var right_margin = Control.new()
-	left_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	#var left_margin = Control.new()
+	#var right_margin = Control.new()
+	#left_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	#right_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
-# Create the message bubble
+	# Create message bubble
 	var message_bubble = PanelContainer.new()
-	message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	message_bubble.custom_minimum_size.x = 600  # Increased from 200 to 400
-	message_bubble.size_flags_stretch_ratio = 0.7  # This makes the bubble use up to 70% of available width
+	#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	#message_bubble.custom_minimum_size.x = 500  # Increased from 200 to 400
+	#message_bubble.size_flags_stretch_ratio = 0.9  # This makes the bubble use up to 70% of available width
 	
+	message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END if is_user else Control.SIZE_SHRINK_BEGIN
+	# Set to use 70% of the container width
+	message_bubble.custom_minimum_size.x = scroll_container.size.x * 0.7
+	
+	# Set the message bubble to take approximately half the container width
+	#message_bubble.custom_minimum_size.x = scroll_container.size.x * 0.45  # 45% of container width
 	
 	# Style the bubble
 	var bubble_style = StyleBoxFlat.new()
@@ -381,7 +453,6 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	text_label.text = text
 	text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text_label.custom_minimum_size.x = 350
 	text_label.add_theme_color_override("font_color", Color(1, 1, 1))
 	
 	content.add_child(name_label)
@@ -412,13 +483,38 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	content_margin.add_child(content)
 	message_bubble.add_child(content_margin)
 	
-	# Add components to row in correct order for alignment
+	# Add spacers for alignment
+	#var left_spacer = Control.new()
+	#var right_spacer = Control.new()
+	#left_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	#right_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	print(is_user)
+	
+	# Create spacers for alignment
+	var left_spacer = Control.new()
+	var right_spacer = Control.new()
+	left_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	# Add components to row in correct order based on sender
 	if is_user:
-		message_row.add_child(left_margin)  # Pushes the bubble to the right
+		message_row.add_child(left_spacer)
 		message_row.add_child(message_bubble)
+		## Set alignment to the right
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END
+		
+		#message_row.alignment = BoxContainer.ALIGNMENT_END
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END
 	else:
 		message_row.add_child(message_bubble)
-		message_row.add_child(right_margin)  # Pushes the bubble to the left
+		message_row.add_child(right_spacer)
+		## Set alignment to the left
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		# For system/assistant messages (left-aligned)
+		#message_row.alignment = BoxContainer.ALIGNMENT_BEGIN
+		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	
+	#message_row.add_child(message_bubble)
 	
 	# Add to message container with spacing
 	message_container.add_child(message_row)
@@ -428,9 +524,26 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	spacer.custom_minimum_size.y = 12
 	message_container.add_child(spacer)
 	
-	# Scroll to bottom
+	# Scroll to bottom after a short delay to ensure layout is complete
 	await get_tree().create_timer(0.1).timeout
 	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
+	
+	
+#func _notification(what):
+	#if what == NOTIFICATION_RESIZED:
+		##_resize_messages()
+		## Add null checks
+		#if message_container != null and scroll_container != null:
+			#for child in message_container.get_children():
+				#if child is HBoxContainer:  # Message row
+					#for subchild in child.get_children():
+						#if subchild is PanelContainer:  # Message bubble
+							## Make sure scroll_container has a valid size
+							#if scroll_container.size.x > 0:
+								#subchild.custom_minimum_size.x = scroll_container.size.x * 0.7
+							#else:
+								## Use a default size if scroll container size is not yet set
+								#subchild.custom_minimum_size.x = 300  # Default width
 
 func _on_upload_pressed():
 	var file_dialog = FileDialog.new()
