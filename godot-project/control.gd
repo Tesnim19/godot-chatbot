@@ -17,7 +17,12 @@ var chat_panel: PanelContainer
 var toggle_button: Button
 var is_chat_open = false
 
+#var python_server_process: Process
+#var server_started = false
+
 func _ready():
+	#start python server
+	#start_python_server()
 	# Make sure UI is set up first
 	setup_ui()
 	
@@ -34,6 +39,18 @@ func _ready():
 	connection_timer.wait_time = 15.0
 	connection_timer.timeout.connect(_on_connection_timer_timeout)
 	connection_timer.start()
+	
+#func start_python_server():
+	#var server_path = "C:/Users/Abdi/Documents/SWEG/iCogLabs_Work/godot-chatbot/server/app.py"
+	#var command = "fastapi dev"  
+	#var arguments = [server_path]  # Arguments should be an array containing the server script path
+#
+	## Execute the command with the correct arguments
+	#var error_code = OS.execute(command, arguments, [], true)  # true to run in the background
+	#if error_code != OK:
+		#print("Failed to start the Python server. Error code: ", error_code)
+	#else:
+		#print("Python server started successfully.")
 
 # Add a new function to handle message resizing
 func _resize_messages():
@@ -66,46 +83,48 @@ func setup_ui():
 	setup_chat_panel()
 	chat_panel.hide()
 
-#func _on_fetch_documents_pressed():
-	#var http_request = HTTPRequest.new()
-	#add_child(http_request)
-	#var url = "http://localhost:8000/documents"  # Adjust this to your server's URL
-	#var error = http_request.request(url)
-#
-	#if error != OK:
-		#print("Failed to send request: ", error)
-		#add_message("System", "Failed to fetch documents!", false)
-	#else:
-		#http_request.request_completed.connect(_on_documents_fetched)
+func _on_fetch_documents_pressed():
+	var http_request = HTTPRequest.new()
+	add_child(http_request)
+	var url = "http://localhost:8000/documents"  # Adjust this to your server's URL
+	var error = http_request.request(url)
+	
+	if error != OK:
+		print("Failed to send request: ", error)
+		add_message("System", "Failed to fetch documents!", false)
+	else:
+		http_request.request_completed.connect(_on_documents_fetched)
 
-#func _on_documents_fetched(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
-	#if result != HTTPRequest.RESULT_SUCCESS:
-		#print("Error during fetch: ", result)
-		#add_message("System", "Failed to fetch documents!", false)
-		#return
-#
-	#if response_code == 200:
-		#var json = JSON.new()
-		#var error = json.parse(body.get_string_from_utf8())
-		#if error == OK:
-			#var response = json.get_data()
-			#var documents = response.get("documents", [])
-			#_populate_document_menu(documents)
-		#else:
-			#print("Failed to parse JSON response")
-			#add_message("System", "Failed to parse documents response!", false)
-	#else:
-		#print("Fetch failed with code: ", response_code)
-		#add_message("System", "Fetch failed with code: " + str(response_code), false)
+func _on_documents_fetched(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	if result != HTTPRequest.RESULT_SUCCESS:
+		print("Error during fetch: ", result)
+		add_message("System", "Failed to fetch documents!", false)
+		return
+	
+	if response_code == 200:
+		var json = JSON.new()
+		var error = json.parse(body.get_string_from_utf8())
+		if error == OK:
+			var response = json.get_data()
+			var documents = response.get("documents", [])
+			_populate_document_menu(documents)
+		else:
+			print("Failed to parse JSON response")
+			add_message("System", "Failed to parse documents response!", false)
+	else:
+		print("Fetch failed with code: ", response_code)
+		add_message("System", "Fetch failed with code: " + str(response_code), false)
 
-#func _populate_document_menu(documents: Array):
-	#var popup = fetch_documents_button.get_popup()
-	#popup.clear()  # Clear previous items
-#
-	#for doc in documents:
-		#popup.add_item(doc)  # Add each document to the dropdown menu
-#
-	#popup._popup()  # Show the dropdown menu
+func _populate_document_menu(documents: Array):
+	var popup = fetch_documents_button.get_popup()
+	popup.clear()  # Clear previous items
+	
+	# Add each document to the dropdown menu
+	for doc in documents:
+		popup.add_item(doc)
+	
+	# Show the dropdown menu
+	popup.popup()
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -168,11 +187,24 @@ func setup_chat_interface():
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
 	
-	## Create a button to fetch documents
-	#fetch_documents_button = MenuButton.new()
-	#fetch_documents_button.text = "Fetch Documents"
-	#fetch_documents_button.connect("pressed", _on_fetch_documents_pressed)
-	#header.add_child(fetch_documents_button)
+	#Button for displaying documents
+	fetch_documents_button = MenuButton.new()
+	fetch_documents_button.text = "Documents"
+	fetch_documents_button.custom_minimum_size = Vector2(100, 0)  # Give it some minimum width
+	var popup = fetch_documents_button.get_popup()
+	fetch_documents_button.pressed.connect(_on_fetch_documents_pressed)
+	
+	# Style the documents button
+	var docs_button_style = StyleBoxFlat.new()
+	docs_button_style.bg_color = Color(0.2, 0.4, 0.8)  # Match your color scheme
+	docs_button_style.corner_radius_top_left = 6
+	docs_button_style.corner_radius_top_right = 6
+	docs_button_style.corner_radius_bottom_left = 6
+	docs_button_style.corner_radius_bottom_right = 6
+
+	fetch_documents_button.add_theme_stylebox_override("normal", docs_button_style)
+
+	header.add_child(fetch_documents_button)
 	
 	var close_button = Button.new()
 	close_button.text = "×"
