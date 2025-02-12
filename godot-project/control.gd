@@ -17,7 +17,12 @@ var chat_panel: PanelContainer
 var toggle_button: Button
 var is_chat_open = false
 
+#var python_server_process: Process
+#var server_started = false
+
 func _ready():
+	#start python server
+	#start_python_server()
 	# Make sure UI is set up first
 	setup_ui()
 	
@@ -34,6 +39,18 @@ func _ready():
 	connection_timer.wait_time = 15.0
 	connection_timer.timeout.connect(_on_connection_timer_timeout)
 	connection_timer.start()
+	
+#func start_python_server():
+	#var server_path = "C:/Users/Abdi/Documents/SWEG/iCogLabs_Work/godot-chatbot/server/app.py"
+	#var command = "fastapi dev"  
+	#var arguments = [server_path]  # Arguments should be an array containing the server script path
+#
+	## Execute the command with the correct arguments
+	#var error_code = OS.execute(command, arguments, [], true)  # true to run in the background
+	#if error_code != OK:
+		#print("Failed to start the Python server. Error code: ", error_code)
+	#else:
+		#print("Python server started successfully.")
 
 # Add a new function to handle message resizing
 func _resize_messages():
