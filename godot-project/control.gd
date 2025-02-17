@@ -21,6 +21,8 @@ var is_chat_open = false
 #var python_server_process: Process
 #var server_started = false
 
+var disconnect = false
+
 func _ready():
 	#start python server
 	#start_python_server()
@@ -231,20 +233,26 @@ func setup_chat_interface():
 	reconnect_button.custom_minimum_size = Vector2(110, 42)
 	reconnect_button.pressed.connect(_on_reconnect_pressed)
 
-	
 	var upload_button_style = StyleBoxFlat.new()
-	upload_button_style.bg_color = Color(0.2, 0.4, 0.8)
+	upload_button_style.bg_color = Color(0.2, 0.4, 0.8) # Blue color
 	upload_button_style.corner_radius_top_left = 6
 	upload_button_style.corner_radius_top_right = 6
 	upload_button_style.corner_radius_bottom_left = 6
 	upload_button_style.corner_radius_bottom_right = 6
-	
+
 	upload_button.add_theme_stylebox_override("normal", upload_button_style)
 	input_container.add_child(upload_button)
 
-	# reconnect button
+	var reconnect_button_style = StyleBoxFlat.new()
+	reconnect_button_style.bg_color = Color(0.8, 0.1, 0.1) # Red color
+	reconnect_button_style.corner_radius_top_left = 6
+	reconnect_button_style.corner_radius_top_right = 6
+	reconnect_button_style.corner_radius_bottom_left = 6
+	reconnect_button_style.corner_radius_bottom_right = 6
+
 	reconnect_button.add_theme_stylebox_override("normal", reconnect_button_style)
 	input_container.add_child(reconnect_button)
+
 	
 	# Spacing between buttons
 	var button_spacer = Control.new()
