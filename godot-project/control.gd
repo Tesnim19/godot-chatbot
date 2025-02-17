@@ -4,6 +4,7 @@ var chat_container: VBoxContainer
 var chat_input: LineEdit
 var send_button: Button
 var upload_button: Button
+var reconnect_button: Button
 var websocket: WebSocketPeer
 var socket_url = "ws://localhost:8000/ws"
 var connection_status = false
@@ -223,6 +224,13 @@ func setup_chat_interface():
 	upload_button.text = "Upload PDF"
 	upload_button.custom_minimum_size = Vector2(110, 42)
 	upload_button.pressed.connect(_on_upload_pressed)
+
+	#Reconnect button
+	reconnect_button = Button.new()
+	reconnect_button.text = "Disconnect"
+	reconnect_button.custom_minimum_size = Vector2(110, 42)
+	reconnect_button.pressed.connect(_on_reconnect_pressed)
+
 	
 	var upload_button_style = StyleBoxFlat.new()
 	upload_button_style.bg_color = Color(0.2, 0.4, 0.8)
@@ -233,6 +241,10 @@ func setup_chat_interface():
 	
 	upload_button.add_theme_stylebox_override("normal", upload_button_style)
 	input_container.add_child(upload_button)
+
+	# reconnect button
+	reconnect_button.add_theme_stylebox_override("normal", reconnect_button_style)
+	input_container.add_child(reconnect_button)
 	
 	# Spacing between buttons
 	var button_spacer = Control.new()
@@ -347,8 +359,12 @@ func _attempt_connection():
 	else:
 		print("Attempting to connect to WebSocket server...")
 
+func _disconnect():
+	if WebSocketPeer.STATE_OPEN:
+		websocket.close(1000,"Closing connection")
+
 func _on_connection_timer_timeout():
-	if !connection_status:
+	if !connection_status and disconnect == false:
 		print("Attempting to reconnect...")
 		_attempt_connection()
 
@@ -700,6 +716,16 @@ func _on_upload_pressed():
 	file_dialog.size = Vector2(500, 400)
 	add_child(file_dialog)
 	file_dialog.popup_centered()
+
+func _on_reconnect_pressed():
+	if connection_status == false:
+		websocket.connect_to_url(socket_url)
+		disconnect = false
+		reconnect_button.text = 'Disconnect'
+	else:
+		_disconnect()
+		disconnect = true
+		reconnect_button.text = 'Reconnect'
 
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
 	if result != HTTPRequest.RESULT_SUCCESS:
