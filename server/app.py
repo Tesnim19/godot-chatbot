@@ -12,9 +12,10 @@ app = FastAPI()
 manager = ConnectionManager()
 
 agent = AIAgent()
-agent.load_document('./public')
+project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))       
+agent.load_document(f'{project_path}/server/public')
 
-app.mount("/public", StaticFiles(directory="public"), name="public")
+app.mount("/public", StaticFiles(directory=f'{project_path}/server/public/'), name="public")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -45,7 +46,7 @@ async def websocket_endpoint(websocket: WebSocket):
 async def upload_pdf(file: UploadFile):
     try:
         contents = await file.read()
-        with open(f'./public/{file.filename}', "wb") as f:
+        with open(f'{project_path}/server/public/{file.filename}', "wb") as f:
             f.write(contents)
         
         agent.load_single_document(f'./public/{file.filename}')
@@ -56,9 +57,9 @@ async def upload_pdf(file: UploadFile):
 @app.get("/documents")
 async def get_documents():
     try:
-        # Use os.listdir for faster access
-        files = [f for f in os.listdir("./public") if f.endswith('.pdf')]
-        return JSONResponse(content={"documents": files})
+        files = [file.split('/')[-1] for file in glob.glob(f"{project_path}/server/public/*.pdf")]
+        return {"documents": files}
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-    
+        return {"error": str(e)}, 500
+
+ 
