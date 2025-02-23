@@ -21,11 +21,12 @@ var is_chat_open = false
 #var python_server_process: Process
 #var server_started = false
 
+var server_process_id = -1
 var disconnect = false
 
 func _ready():
 	#start python server
-	#start_python_server()
+	start_python_server()
 	# Make sure UI is set up first
 	setup_ui()
 	
@@ -42,18 +43,52 @@ func _ready():
 	connection_timer.wait_time = 15.0
 	connection_timer.timeout.connect(_on_connection_timer_timeout)
 	connection_timer.start()
+
+func _exit():
+	print("Trying to exit process")
+	if server_process_id != -1:
+		print("Stopping the server...")
+		# Terminate the process
+		OS.kill(server_process_id) 
+		server_process_id = -1  # Reset the server process ID
+		print("Server stopped.")
 	
-#func start_python_server():
-	#var server_path = "C:/Users/Abdi/Documents/SWEG/iCogLabs_Work/godot-chatbot/server/app.py"
-	#var command = "fastapi dev"  
-	#var arguments = [server_path]  # Arguments should be an array containing the server script path
-#
-	## Execute the command with the correct arguments
-	#var error_code = OS.execute(command, arguments, [], true)  # true to run in the background
-	#if error_code != OK:
-		#print("Failed to start the Python server. Error code: ", error_code)
-	#else:
-		#print("Python server started successfully.")
+func start_python_server():
+	var project_dir = ProjectSettings.globalize_path("res://")
+	var server_dir = project_dir + "../server/"
+		# check if the server file exitst
+	var server_file = server_dir + "app.py"
+	
+	var server_exist = FileAccess.file_exists(server_file)
+	
+	if server_exist != true:
+		print("Server file doesn't exist")
+		
+	var venv_dir = server_dir + ".venv"
+		
+	var args_create_venv = ["-m", "venv", venv_dir]
+	
+	var command_create_venv = "python"
+	
+	var output_create_venv = []
+	
+	var execute_code_create_venv = OS.execute(command_create_venv, args_create_venv, output_create_venv, true)
+	
+	print(execute_code_create_venv)
+	print("Ouput creating venv: \n", "\n".join(output_create_venv))
+	
+	_execute_server_startup_command(server_dir)
+	#var thread = Thread.new()
+	#thread.start(_execute_server_startup_command.bind(server_dir))
+
+func _execute_server_startup_command(server_dir):
+	var args_fastapi = ["run", server_dir + "app.py"]
+	
+	var command_fastapi = server_dir + ".venv/bin/fastapi"
+	
+	server_process_id = OS.create_process(command_fastapi, args_fastapi)
+
+	print("server id: ", server_process_id)
 
 # Add a new function to handle message resizing
 func _resize_messages():
@@ -693,25 +728,11 @@ func _on_reference_clicked(ref_data: Dictionary):
 		print("Failed to open PDF. Error code: ", error_code)
 		add_message("System", "Error: Failed to open PDF!", false)
 
-		
-
-
-
-#func _notification(what):
-	#if what == NOTIFICATION_RESIZED:
-		##_resize_messages()
-		## Add null checks
-		#if message_container != null and scroll_container != null:
-			#for child in message_container.get_children():
-				#if child is HBoxContainer:  # Message row
-					#for subchild in child.get_children():
-						#if subchild is PanelContainer:  # Message bubble
-							## Make sure scroll_container has a valid size
-							#if scroll_container.size.x > 0:
-								#subchild.custom_minimum_size.x = scroll_container.size.x * 0.7
-							#else:
-								## Use a default size if scroll container size is not yet set
-								#subchild.custom_minimum_size.x = 300  # Default width
+func _notification(what):
+	if what == NOTIFICATION_EXIT_TREE:
+		_exit()
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_exit()
 
 func _on_upload_pressed():
 	var file_dialog = FileDialog.new()
