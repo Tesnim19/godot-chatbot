@@ -11,3 +11,4 @@ sentencepiece==0.2.0
 easyocr==1.7.2
 fastapi[standard]
 pypdf2==3.0.1
+langchain-google-genai==2.0.10
