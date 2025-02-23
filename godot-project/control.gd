@@ -5,6 +5,7 @@ var chat_input: LineEdit
 var send_button: Button
 var upload_button: Button
 var reconnect_button: Button
+var tooltip_button: Button
 var websocket: WebSocketPeer
 var socket_url = "ws://localhost:8000/ws"
 var connection_status = false
@@ -23,6 +24,7 @@ var is_chat_open = false
 
 var server_process_id = -1
 var disconnect = false
+var document_map = {}
 
 func _ready():
 	#start python server
@@ -156,13 +158,25 @@ func _on_documents_fetched(result: int, response_code: int, headers: PackedStrin
 func _populate_document_menu(documents: Array):
 	var popup = fetch_documents_button.get_popup()
 	popup.clear()  # Clear previous items
+	document_map.clear()
 	
 	# Add each document to the dropdown menu
-	for doc in documents:
-		popup.add_item(doc)
+	for i in range(documents.size()):
+		popup.add_item(documents[i], i)
+		document_map[i] = documents[i]
+		
+	# Ensure the signal is connected only once
+	if not popup.id_pressed.is_connected(_on_document_selected):
+		popup.id_pressed.connect(_on_document_selected)
 	
 	# Show the dropdown menu
 	popup.popup()
+
+func _on_document_selected(id):
+	var project_dir = ProjectSettings.globalize_path("res://")
+	var file_dir = project_dir + "../server/public/" + document_map[id]
+	_on_reference_clicked({'path': file_dir, 'page': 0})
+	print(file_dir)
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -224,6 +238,21 @@ func setup_chat_interface():
 	title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
+
+	# Button for displaying tooltip
+	tooltip_button = Button.new()
+	
+	var tool_tip_icon = Image.new()
+	tool_tip_icon.load("res://bubble.png")
+	tool_tip_icon.resize(30, 30, Image.INTERPOLATE_BILINEAR)
+	
+	var texture = ImageTexture.create_from_image(tool_tip_icon)
+
+	tooltip_button.icon = texture
+	tooltip_button.text = ""
+	header.add_child(tooltip_button)
+	
+	tooltip_button.pressed.connect(_on_tooltip_pressed)
 	
 	#Button for displaying documents
 	fetch_documents_button = MenuButton.new()
@@ -516,6 +545,12 @@ func _on_pdf_selected(path: String):
 	file_header += "Content-Type: application/pdf\r\n\r\n"
 	body.append_array(file_header.to_utf8_buffer())
 	body.append_array(file_data)  # Append raw binary data
+
+	# Add original_file_path as another form field
+	var path_field = "\r\n--" + boundary + "\r\n"
+	path_field += "Content-Disposition: form-data; name=\"original_file_path\"\r\n\r\n"
+	path_field += path + "\r\n"
+	body.append_array(path_field.to_utf8_buffer())
 	
 	# Add closing boundary
 	var end_boundary = "\r\n--" + boundary + "--\r\n"
@@ -745,6 +780,73 @@ func _on_upload_pressed():
 	file_dialog.size = Vector2(500, 400)
 	add_child(file_dialog)
 	file_dialog.popup_centered()
+
+func _on_tooltip_pressed():
+	var tip_popup = PopupPanel.new()
+	
+	# Set the background color of the popup (dark purple)
+	var popup_style = StyleBoxFlat.new()
+	popup_style.bg_color = Color("5553b7")  # Darker purple
+	popup_style.content_margin_left = 15
+	popup_style.content_margin_right = 15
+	popup_style.content_margin_top = 10
+	popup_style.content_margin_bottom = 10
+	tip_popup.add_theme_stylebox_override("panel", popup_style)
+
+
+	# Create a VBoxContainer for the layout
+	var content_container = VBoxContainer.new()
+	content_container.size_flags_vertical = Control.SIZE_EXPAND_FILL  # Allow expansion
+	content_container.add_theme_constant_override("separation", 10)  # Add spacing
+	tip_popup.add_child(content_container)
+
+	# Add content to the popup (e.g., a tip Label)
+	var tip_label = Label.new()
+	tip_label.text = "Here are some useful tips!"
+	tip_label.add_theme_color_override("font_color", Color(1, 1, 1))  # White text
+	content_container.add_child(tip_label)
+	
+	# Spacer to push buttons to the bottom
+	var spacer = Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content_container.add_child(spacer)
+
+	# Create an HBoxContainer for buttons
+	var button_container = HBoxContainer.new()
+	button_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # Make it expand horizontally
+	content_container.add_child(button_container)
+
+	# Create the "Back" button and position it at the bottom left
+	var back_button = Button.new()
+	back_button.text = "Back"
+	back_button.custom_minimum_size = Vector2(60, 20)  # Set a proper size
+	back_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	button_container.add_child(back_button)  # Add to button container
+	
+	# Add a spacer to push "Next" button to the right
+	var button_spacer = Control.new()
+	button_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button_container.add_child(button_spacer)
+
+	# Create the "Next" button and position it at the bottom right
+	var next_button = Button.new()
+	next_button.text = "Next"
+	next_button.custom_minimum_size = Vector2(60, 20)  # Set a proper size
+	next_button.size_flags_horizontal = Control.SIZE_SHRINK_END  # Align right
+	
+	var next_button_style = StyleBoxFlat.new()
+	next_button_style.bg_color = Color("a88532")  # Yellowish color
+	next_button.add_theme_stylebox_override("normal", next_button_style)
+	
+	button_container.add_child(next_button)  # Add to button container
+
+	# Add the popup to the scene
+	add_child(tip_popup)
+
+	# Position the popup relative to the tooltip_button
+	var button_position = tooltip_button.global_position
+	var offset = Vector2(tooltip_button.custom_minimum_size.x - 100, 50)  # Adjust the X offset as needed
+	tip_popup.popup(Rect2i(button_position + offset, Vector2i(200, 120)))  # Increased height for button space
 
 func _on_reconnect_pressed():
 	if connection_status == false:
