@@ -15,6 +15,7 @@ manager = ConnectionManager()
 agent = AIAgent(model_type="gemini")
 project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))       
 agent.load_document(f'{project_path}/server/public')
+agent.load_3d_models()
 
 app.mount("/public", StaticFiles(directory=f'{project_path}/server/public/'), name="public")
 
