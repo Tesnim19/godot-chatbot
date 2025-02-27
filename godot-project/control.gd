@@ -5,6 +5,7 @@ var chat_input: LineEdit
 var send_button: Button
 var upload_button: Button
 var reconnect_button: Button
+var tooltip_button: Button
 var websocket: WebSocketPeer
 var socket_url = "ws://localhost:8000/ws"
 var connection_status = false
@@ -21,9 +22,13 @@ var toggle_button: Button
 var is_chat_open = false
 
 
+var server_process_id = -1
 var disconnect = false
+var document_map = {}
 
 func _ready():
+	#start python server
+	start_python_server()
 	# Make sure UI is set up first
 	setup_ui()
 	
@@ -40,6 +45,52 @@ func _ready():
 	connection_timer.wait_time = 15.0
 	connection_timer.timeout.connect(_on_connection_timer_timeout)
 	connection_timer.start()
+
+func _exit():
+	print("Trying to exit process")
+	if server_process_id != -1:
+		print("Stopping the server...")
+		# Terminate the process
+		OS.kill(server_process_id) 
+		server_process_id = -1  # Reset the server process ID
+		print("Server stopped.")
+	
+func start_python_server():
+	var project_dir = ProjectSettings.globalize_path("res://")
+	var server_dir = project_dir + "../server/"
+		# check if the server file exitst
+	var server_file = server_dir + "app.py"
+	
+	var server_exist = FileAccess.file_exists(server_file)
+	
+	if server_exist != true:
+		print("Server file doesn't exist")
+		
+	var venv_dir = server_dir + ".venv"
+		
+	var args_create_venv = ["-m", "venv", venv_dir]
+	
+	var command_create_venv = "python"
+	
+	var output_create_venv = []
+	
+	var execute_code_create_venv = OS.execute(command_create_venv, args_create_venv, output_create_venv, true)
+	
+	print(execute_code_create_venv)
+	print("Ouput creating venv: \n", "\n".join(output_create_venv))
+	
+	_execute_server_startup_command(server_dir)
+	#var thread = Thread.new()
+	#thread.start(_execute_server_startup_command.bind(server_dir))
+
+func _execute_server_startup_command(server_dir):
+	var args_fastapi = ["run", server_dir + "app.py"]
+	
+	var command_fastapi = server_dir + ".venv/bin/fastapi"
+	
+	server_process_id = OS.create_process(command_fastapi, args_fastapi)
+
+	print("server id: ", server_process_id)
 	
 func setup_ui():
 	# Main control settings
@@ -159,8 +210,14 @@ func _populate_document_menu(documents: Array):
 	var separator = HSeparator.new()
 	doc_list_container.add_child(separator)
 	
+	#clear the document map
+	document_map.clear()
+	
 	# Add each document with a delete button
-	for doc in documents:
+	for i in range(documents.size()):
+		var doc = documents[i]
+		document_map[i] = doc
+		
 		var doc_row = HBoxContainer.new()
 		doc_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		
@@ -208,15 +265,15 @@ func _populate_document_menu(documents: Array):
 	
 	# Add popup to the scene
 	add_child(popup)
+
+	## Ensure the signal is connected only once
+	#if not popup.id_pressed.is_connected(_on_document_selected):
+		#popup.id_pressed.connect(_on_document_selected)
 	
 	# Show popup near the top of the chat panel
 	var popup_position = Vector2(chat_panel.position.x + 20, chat_panel.position.y + 50)
 	popup.popup(Rect2(popup_position, Vector2(300, 0))) 
 
-# Add handler for document selection
-func _on_document_selected(document_name: String):
-	print("Selected document:", document_name)
-	#TODO: Implement what happens when document is selected
 
 func _on_delete_document_pressed(document_name: String):
 	print("Attempting to delete document:", document_name)
@@ -236,7 +293,7 @@ func _delete_document_confirmed(document_name: String):
 	# Send delete request to server
 	var http_request = HTTPRequest.new()
 	add_child(http_request)
-	var url = "http://localhost:8000/delete_document"  # Adjust to your server endpoint
+	var url = "http://localhost:8000/delete_document"
 	
 	# Create the request body
 	var body = JSON.stringify({"document_name": document_name})
@@ -275,6 +332,20 @@ func _on_document_deletion_response(result: int, response_code: int, headers: Pa
 	else:
 		print("Document deletion failed with code:", response_code)
 		add_message("System", "Document deletion failed with code: " + str(response_code), false)
+
+func _on_document_selected(document_name):
+	# If an integer is passed (from id_pressed signal), convert to document name
+	if typeof(document_name) == TYPE_INT:
+		if document_map.has(document_name):
+			document_name = document_map[document_name]
+		else:
+			print("Error: Invalid document ID:", document_name)
+			return
+	
+	var project_dir = ProjectSettings.globalize_path("res://")
+	var file_dir = project_dir + "../server/public/" + document_name
+	_on_reference_clicked({'path': file_dir, 'page': 0})
+	print("Opening document:", file_dir)
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -340,15 +411,22 @@ func setup_chat_interface():
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_container.add_child(title)
+	header.add_child(title)
+
+	# Button for displaying tooltip
+	tooltip_button = Button.new()
 	
-	## Add connection indicator to header
-	#header.add_child(chat_header_indicator)
-	#
-	## Add a small spacing
-	#var indicator_spacer = Control.new()
-	#indicator_spacer.custom_minimum_size.x = 10
-	#header.add_child(indicator_spacer)
+	var tool_tip_icon = Image.new()
+	tool_tip_icon.load("res://bubble.png")
+	tool_tip_icon.resize(30, 30, Image.INTERPOLATE_BILINEAR)
+	
+	var texture = ImageTexture.create_from_image(tool_tip_icon)
+
+	tooltip_button.icon = texture
+	tooltip_button.text = ""
+	header.add_child(tooltip_button)
+	
+	tooltip_button.pressed.connect(_on_tooltip_pressed)
 	
 	#Button for displaying documents
 	fetch_documents_button = MenuButton.new()
@@ -662,6 +740,12 @@ func _on_pdf_selected(path: String):
 	file_header += "Content-Type: application/pdf\r\n\r\n"
 	body.append_array(file_header.to_utf8_buffer())
 	body.append_array(file_data)  # Append raw binary data
+
+	# Add original_file_path as another form field
+	var path_field = "\r\n--" + boundary + "\r\n"
+	path_field += "Content-Disposition: form-data; name=\"original_file_path\"\r\n\r\n"
+	path_field += path + "\r\n"
+	body.append_array(path_field.to_utf8_buffer())
 	
 	# Add closing boundary
 	var end_boundary = "\r\n--" + boundary + "--\r\n"
@@ -867,6 +951,11 @@ func _on_reference_clicked(ref_data: Dictionary):
 		print("Failed to open PDF. Error code: ", error_code)
 		add_message("System", "Error: Failed to open PDF!", false)
 
+func _notification(what):
+	if what == NOTIFICATION_EXIT_TREE:
+		_exit()
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_exit()
 
 func _on_upload_pressed():
 	var file_dialog = FileDialog.new()
@@ -879,6 +968,73 @@ func _on_upload_pressed():
 	file_dialog.size = Vector2(500, 400)
 	add_child(file_dialog)
 	file_dialog.popup_centered()
+
+func _on_tooltip_pressed():
+	var tip_popup = PopupPanel.new()
+	
+	# Set the background color of the popup (dark purple)
+	var popup_style = StyleBoxFlat.new()
+	popup_style.bg_color = Color("5553b7")  # Darker purple
+	popup_style.content_margin_left = 15
+	popup_style.content_margin_right = 15
+	popup_style.content_margin_top = 10
+	popup_style.content_margin_bottom = 10
+	tip_popup.add_theme_stylebox_override("panel", popup_style)
+
+
+	# Create a VBoxContainer for the layout
+	var content_container = VBoxContainer.new()
+	content_container.size_flags_vertical = Control.SIZE_EXPAND_FILL  # Allow expansion
+	content_container.add_theme_constant_override("separation", 10)  # Add spacing
+	tip_popup.add_child(content_container)
+
+	# Add content to the popup (e.g., a tip Label)
+	var tip_label = Label.new()
+	tip_label.text = "Here are some useful tips!"
+	tip_label.add_theme_color_override("font_color", Color(1, 1, 1))  # White text
+	content_container.add_child(tip_label)
+	
+	# Spacer to push buttons to the bottom
+	var spacer = Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content_container.add_child(spacer)
+
+	# Create an HBoxContainer for buttons
+	var button_container = HBoxContainer.new()
+	button_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # Make it expand horizontally
+	content_container.add_child(button_container)
+
+	# Create the "Back" button and position it at the bottom left
+	var back_button = Button.new()
+	back_button.text = "Back"
+	back_button.custom_minimum_size = Vector2(60, 20)  # Set a proper size
+	back_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	button_container.add_child(back_button)  # Add to button container
+	
+	# Add a spacer to push "Next" button to the right
+	var button_spacer = Control.new()
+	button_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button_container.add_child(button_spacer)
+
+	# Create the "Next" button and position it at the bottom right
+	var next_button = Button.new()
+	next_button.text = "Next"
+	next_button.custom_minimum_size = Vector2(60, 20)  # Set a proper size
+	next_button.size_flags_horizontal = Control.SIZE_SHRINK_END  # Align right
+	
+	var next_button_style = StyleBoxFlat.new()
+	next_button_style.bg_color = Color("a88532")  # Yellowish color
+	next_button.add_theme_stylebox_override("normal", next_button_style)
+	
+	button_container.add_child(next_button)  # Add to button container
+
+	# Add the popup to the scene
+	add_child(tip_popup)
+
+	# Position the popup relative to the tooltip_button
+	var button_position = tooltip_button.global_position
+	var offset = Vector2(tooltip_button.custom_minimum_size.x - 100, 50)  # Adjust the X offset as needed
+	tip_popup.popup(Rect2i(button_position + offset, Vector2i(200, 120)))  # Increased height for button space
 
 func _on_reconnect_pressed():
 	if connection_status == false:

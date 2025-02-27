@@ -8,16 +8,37 @@ import torch
 from langchain_huggingface import HuggingFaceEmbeddings
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 from server.helper.clean import clean_text
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from dotenv import load_dotenv
 
+load_dotenv()
 class AIAgent:
-    def __init__(self):
+    def __init__(self, model_type='t5-base'):
+        print(os.getenv('GOOGLE_API_KEY'))
+        os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
+        self.model_type = model_type
         self.document = None
         self.chroma_path = 'chroma'
         self.db = None
         self.retriver = None
-        self.langchain_embeddings = HuggingFaceEmbeddings(model_name="distilbert-base-nli-stsb-mean-tokens")
-        self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
+        #self.langchain_embeddings = HuggingFaceEmbeddings(model_name="distilbert-base-nli-stsb-mean-tokens")
+        self.langchain_embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
         self.t5tokenizer = T5Tokenizer.from_pretrained("t5-base")
+        
+        self.update_model(model_type)
+    
+    def update_model(self, model_type):
+        self.model_type = model_type
+        if self.model_type == 'gemini':
+            self.model = ChatGoogleGenerativeAI(
+                                model="gemini-1.5-flash",
+                                temperature=0,
+                                max_tokens=None,
+                                timeout=None,
+                                max_retries=2,
+                       )
+        else:
+            self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
 
     def load_document(self, path):
         document_loader = PyPDFDirectoryLoader(path)
@@ -92,15 +113,26 @@ class AIAgent:
 
         # Extract the content from the results
         documents = "\n\n".join([result.page_content for result in results])
+        
+        if self.model_type == 'gemini':
+            prompt = f"""You are an assistant for question-answering tasks.
+            Use the following context to answer the question.
+            If you don't know the answer, just say that you don't know.
+            Use five sentences maximum and keep the answer concise.\n
+            Question: {question} \nContext: {documents} \nAnswer:"""
+            
+            predicted_answer = self.model.invoke(prompt)
+            predicted_answer = predicted_answer.content
+           
+        else:
+            # Combine the question and context into a single string
+            input_text = f"question: {question} context: {documents}"
+            inputs = self.t5tokenizer(input_text, return_tensors="pt", max_length=1024, truncation=True, padding=True)
 
-        # Combine the question and context into a single string
-        input_text = f"question: {question} context: {documents}"
-        inputs = self.t5tokenizer(input_text, return_tensors="pt", max_length=1024, truncation=True, padding=True)
+            with torch.no_grad():
+                outputs = self.model.generate(inputs["input_ids"], max_length=50, num_beams=4, early_stopping=True)
 
-        with torch.no_grad():
-            outputs = self.model.generate(inputs["input_ids"], max_length=50, num_beams=4, early_stopping=True)
-
-        predicted_answer = self.t5tokenizer.decode(outputs[0], skip_special_tokens=True)
+            predicted_answer = self.t5tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         # Now, return the predicted answer along with the document path and page number
         answer_with_metadata = []
@@ -121,4 +153,4 @@ class AIAgent:
 #agent = AIAgent()
 #agent.load_document('./public')
 #answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
-#print(answer
+#print(answer)
