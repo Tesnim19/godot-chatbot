@@ -13,14 +13,14 @@ var http_request: HTTPRequest
 var message_container: VBoxContainer
 var scroll_container: ScrollContainer
 var fetch_documents_button: Button
+var connection_indicator: ColorRect
+var chat_header_indicator: ColorRect
 
 # New UI elements
 var chat_panel: PanelContainer
 var toggle_button: Button
 var is_chat_open = false
 
-#var python_server_process: Process
-#var server_started = false
 
 var server_process_id = -1
 var disconnect = false
@@ -91,37 +91,52 @@ func _execute_server_startup_command(server_dir):
 	server_process_id = OS.create_process(command_fastapi, args_fastapi)
 
 	print("server id: ", server_process_id)
-
-# Add a new function to handle message resizing
-func _resize_messages():
-	if not message_container or not scroll_container:
-		return
 	
-	var container_width = scroll_container.size.x
-	if container_width <= 0:
-		return  # Avoid invalid or uninitialized sizes
-	
-	# Determine the target width for message bubbles as a percentage of the container width
-	var target_width = container_width * 0.7  # Adjust percentage as needed (e.g., 70%)
-	
-	# Iterate over all children in the message container
-	for child in message_container.get_children():
-		if child is HBoxContainer:  # Process message rows only
-			for subchild in child.get_children():
-				if subchild is PanelContainer:  # Resize message bubbles
-					if subchild.has_method("set_custom_minimum_size"):
-						subchild.set_custom_minimum_size(Vector2(target_width, 0))
-
-
-
 func setup_ui():
 	# Main control settings
 	anchor_right = 0.98
 	anchor_bottom = 0.96
 	
 	setup_toggle_button()
+	setup_connection_indicator()
 	setup_chat_panel()
 	chat_panel.hide()
+
+# New function to create connection indicator
+func setup_connection_indicator():
+	# Create the indicator in the top-right corner of the toggle button
+	connection_indicator = ColorRect.new()
+	connection_indicator.size = Vector2(12, 12)
+	connection_indicator.color = Color(0.8, 0.2, 0.2)  # Red by default
+	
+	# Create a circle shape using a StyleBoxFlat
+	var circle_style = StyleBoxFlat.new()
+	circle_style.bg_color = Color(0.8, 0.2, 0.2)
+	circle_style.corner_radius_top_left = 16
+	circle_style.corner_radius_top_right = 16
+	circle_style.corner_radius_bottom_left = 16
+	circle_style.corner_radius_bottom_right = 16
+	
+	# Apply the style
+	connection_indicator.add_theme_stylebox_override("panel", circle_style)
+	
+	# Position it on the toggle button
+	connection_indicator.position = Vector2(-6, -6)
+	toggle_button.add_child(connection_indicator)
+	
+	# Also add an indicator in the chat panel header
+	chat_header_indicator = ColorRect.new()
+	chat_header_indicator.size = Vector2(12, 12)
+	chat_header_indicator.custom_minimum_size = Vector2(12, 12)
+	
+	# Create and apply the same style
+	var header_circle_style = StyleBoxFlat.new()
+	header_circle_style.bg_color = Color(0.8, 0.2, 0.2)
+	header_circle_style.corner_radius_top_left = 6
+	header_circle_style.corner_radius_top_right = 6
+	header_circle_style.corner_radius_bottom_left = 6
+	header_circle_style.corner_radius_bottom_right = 6
+	chat_header_indicator.add_theme_stylebox_override("panel", header_circle_style)
 
 func _on_fetch_documents_pressed():
 	var http_request = HTTPRequest.new()
@@ -134,6 +149,16 @@ func _on_fetch_documents_pressed():
 		add_message("System", "Failed to fetch documents!", false)
 	else:
 		http_request.request_completed.connect(_on_documents_fetched)
+
+# Add handler for document button click to show popup
+func _on_documents_button_pressed():
+	# Remove any existing popup first
+	var existing_popup = get_node_or_null("DocumentListPopup")
+	if existing_popup:
+		existing_popup.queue_free()
+	
+	# Fetch documents and show in popup
+	_on_fetch_documents_pressed()
 
 func _on_documents_fetched(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
 	if result != HTTPRequest.RESULT_SUCCESS:
@@ -156,27 +181,171 @@ func _on_documents_fetched(result: int, response_code: int, headers: PackedStrin
 		add_message("System", "Fetch failed with code: " + str(response_code), false)
 
 func _populate_document_menu(documents: Array):
-	var popup = fetch_documents_button.get_popup()
-	popup.clear()  # Clear previous items
+	# Create a popup for the document list
+	var popup = PopupPanel.new()
+	popup.name = "DocumentListPopup"
+	
+	# Create a margin container inside popup for padding
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	popup.add_child(margin)
+	
+	# Create the document list container
+	var doc_list_container = VBoxContainer.new()
+	doc_list_container.name = "DocumentListContainer"
+	doc_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_child(doc_list_container)
+	
+	# Add a header
+	var header = Label.new()
+	header.text = "Available Documents"
+	header.add_theme_font_size_override("font_size", 18)
+	header.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
+	doc_list_container.add_child(header)
+	
+	# Add a separator
+	var separator = HSeparator.new()
+	doc_list_container.add_child(separator)
+	
+	#clear the document map
 	document_map.clear()
 	
-	# Add each document to the dropdown menu
+	# Add each document with a delete button
 	for i in range(documents.size()):
-		popup.add_item(documents[i], i)
-		document_map[i] = documents[i]
+		var doc = documents[i]
+		document_map[i] = doc
 		
-	# Ensure the signal is connected only once
-	if not popup.id_pressed.is_connected(_on_document_selected):
-		popup.id_pressed.connect(_on_document_selected)
+		var doc_row = HBoxContainer.new()
+		doc_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		
+		# Document name button (clickable to open)
+		var doc_button = Button.new()
+		doc_button.text = doc
+		doc_button.flat = true
+		doc_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		doc_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		doc_button.pressed.connect(_on_document_selected.bind(doc))
+		
+		# Delete button
+		var delete_button = Button.new()
+		delete_button.text = "×"
+		delete_button.tooltip_text = "Delete document"
+		delete_button.add_theme_font_size_override("font_size", 18)
+		delete_button.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		delete_button.pressed.connect(_on_delete_document_pressed.bind(doc))
+		
+		# Add style to delete button
+		var delete_style = StyleBoxFlat.new()
+		delete_style.bg_color = Color(0.5, 0.1, 0.1, 0.6)
+		delete_style.corner_radius_top_left = 4
+		delete_style.corner_radius_top_right = 4
+		delete_style.corner_radius_bottom_left = 4
+		delete_style.corner_radius_bottom_right = 4
+		delete_button.add_theme_stylebox_override("normal", delete_style)
+		
+		doc_row.add_child(doc_button)
+		doc_row.add_child(delete_button)
+		doc_list_container.add_child(doc_row)
 	
-	# Show the dropdown menu
-	popup.popup()
+	# If no documents, show a message
+	if documents.size() == 0:
+		var no_docs_label = Label.new()
+		no_docs_label.text = "No documents available"
+		no_docs_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		doc_list_container.add_child(no_docs_label)
+	
+	# Add a close button
+	var close_button = Button.new()
+	close_button.text = "Close"
+	close_button.pressed.connect(func(): popup.hide())
+	doc_list_container.add_child(close_button)
+	
+	# Add popup to the scene
+	add_child(popup)
 
-func _on_document_selected(id):
+	## Ensure the signal is connected only once
+	#if not popup.id_pressed.is_connected(_on_document_selected):
+		#popup.id_pressed.connect(_on_document_selected)
+	
+	# Show popup near the top of the chat panel
+	var popup_position = Vector2(chat_panel.position.x + 20, chat_panel.position.y + 50)
+	popup.popup(Rect2(popup_position, Vector2(300, 0))) 
+
+
+func _on_delete_document_pressed(document_name: String):
+	print("Attempting to delete document:", document_name)
+	
+	# Create a confirmation dialog
+	var confirm_dialog = ConfirmationDialog.new()
+	confirm_dialog.title = "Confirm Deletion"
+	confirm_dialog.dialog_text = "Are you sure you want to delete " + document_name + "?"
+	confirm_dialog.confirmed.connect(_delete_document_confirmed.bind(document_name))
+	add_child(confirm_dialog)
+	confirm_dialog.popup_centered()
+
+# Confirmation callback
+func _delete_document_confirmed(document_name: String):
+	print("Deletion confirmed for:", document_name)
+	
+	# Send delete request to server
+	var http_request = HTTPRequest.new()
+	add_child(http_request)
+	var url = "http://localhost:8000/delete_document"
+	
+	# Create the request body
+	var body = JSON.stringify({"document_name": document_name})
+	var headers = ["Content-Type: application/json"]
+	
+	http_request.request_completed.connect(_on_document_deletion_response)
+	var error = http_request.request(url, headers, HTTPClient.METHOD_POST, body)
+	
+	if error != OK:
+		print("Failed to send delete request:", error)
+		add_message("System", "Failed to send delete request!", false)
+
+# Handle server response to deletion
+func _on_document_deletion_response(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	if result != HTTPRequest.RESULT_SUCCESS:
+		print("Error during document deletion:", result)
+		add_message("System", "Document deletion failed!", false)
+		return
+	
+	if response_code == 200:
+		var json = JSON.new()
+		var error = json.parse(body.get_string_from_utf8())
+		if error == OK:
+			var response = json.get_data()
+			print("Server response:", response)
+			
+			var success = response.get("success", false)
+			var message = response.get("message", "Unknown response")
+			
+			if success:
+				add_message("System", "Document deleted successfully: " + message, false)
+				# Refresh document list
+				_on_fetch_documents_pressed()
+			else:
+				add_message("System", "Failed to delete document: " + message, false)
+	else:
+		print("Document deletion failed with code:", response_code)
+		add_message("System", "Document deletion failed with code: " + str(response_code), false)
+
+func _on_document_selected(document_name):
+	# If an integer is passed (from id_pressed signal), convert to document name
+	if typeof(document_name) == TYPE_INT:
+		if document_map.has(document_name):
+			document_name = document_map[document_name]
+		else:
+			print("Error: Invalid document ID:", document_name)
+			return
+	
 	var project_dir = ProjectSettings.globalize_path("res://")
-	var file_dir = project_dir + "../server/public/" + document_map[id]
+	var file_dir = project_dir + "../server/public/" + document_name
 	_on_reference_clicked({'path': file_dir, 'page': 0})
-	print(file_dir)
+	print("Opening document:", file_dir)
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -231,6 +400,11 @@ func setup_chat_interface():
 	# Header with title and close button
 	var header = HBoxContainer.new()
 	chat_container.add_child(header)
+	
+	# Create a sub-container for the title and indicator to keep them together
+	var title_container = HBoxContainer.new()
+	title_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title_container)
 	
 	var title = Label.new()
 	title.text = "Chat Assistant"
@@ -421,13 +595,13 @@ func _on_toggle_chat():
 
 func setup_websocket():
 	websocket = WebSocketPeer.new()
+	add_message("System", "Waiting to connect to server!", false)
 	_attempt_connection()
 
 func _attempt_connection():
 	var err = websocket.connect_to_url(socket_url)
 	if err != OK:
 		print("Waiting to connect to WebSocket server: ", err)
-		add_message("System", "Waiting to connect to server!", false)
 	else:
 		print("Attempting to connect to WebSocket server...")
 
@@ -451,6 +625,7 @@ func _process(_delta):
 					print("Connected to server!")
 					connection_status = true
 					add_message("System", "Connected to server!", false)
+					_update_connection_indicator(true)
 				
 				while websocket.get_available_packet_count():
 					var packet = websocket.get_packet()
@@ -462,6 +637,26 @@ func _process(_delta):
 					print("Disconnected from server")
 					connection_status = false
 					add_message("System", "Disconnected from server!", false)
+					_update_connection_indicator(false)
+					
+# New function to update the connection indicator
+func _update_connection_indicator(is_connected: bool):
+	# Update color based on connection status
+	var color = Color(0.2, 0.8, 0.2) if is_connected else Color(0.8, 0.2, 0.2)  # Green or Red
+	
+	# Update toggle button indicator
+	if connection_indicator:
+		connection_indicator.color = color
+		var style = connection_indicator.get_theme_stylebox("panel")
+		if style:
+			style.bg_color = color
+	
+	# Update chat header indicator
+	if chat_header_indicator:
+		chat_header_indicator.color = color
+		var header_style = chat_header_indicator.get_theme_stylebox("panel")
+		if header_style:
+			header_style.bg_color = color
 
 func _handle_websocket_message(message: String):
 	print("Received message: ", message) # Debug logging
@@ -577,24 +772,14 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	var message_row = HBoxContainer.new()
 	message_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
-	# Create left and right margins/spacers
-	#var left_margin = Control.new()
-	#var right_margin = Control.new()
-	#left_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	#right_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	# Create message bubble
 	var message_bubble = PanelContainer.new()
-	#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	#message_bubble.custom_minimum_size.x = 500  # Increased from 200 to 400
-	#message_bubble.size_flags_stretch_ratio = 0.9  # This makes the bubble use up to 70% of available width
 	
 	message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END if is_user else Control.SIZE_SHRINK_BEGIN
 	# Set to use 70% of the container width
 	message_bubble.custom_minimum_size.x = scroll_container.size.x * 0.7
 	
-	# Set the message bubble to take approximately half the container width
-	#message_bubble.custom_minimum_size.x = scroll_container.size.x * 0.45  # 45% of container width
 	
 	# Style the bubble
 	var bubble_style = StyleBoxFlat.new()
@@ -667,12 +852,6 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	content_margin.add_child(content)
 	message_bubble.add_child(content_margin)
 	
-	# Add spacers for alignment
-	#var left_spacer = Control.new()
-	#var right_spacer = Control.new()
-	#left_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	#right_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	print(is_user)
 	
 	# Create spacers for alignment
 	var left_spacer = Control.new()
@@ -684,21 +863,10 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	if is_user:
 		message_row.add_child(left_spacer)
 		message_row.add_child(message_bubble)
-		## Set alignment to the right
-		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END
-		
-		#message_row.alignment = BoxContainer.ALIGNMENT_END
-		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END
 	else:
 		message_row.add_child(message_bubble)
 		message_row.add_child(right_spacer)
-		## Set alignment to the left
-		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		# For system/assistant messages (left-aligned)
-		#message_row.alignment = BoxContainer.ALIGNMENT_BEGIN
-		#message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	
-	#message_row.add_child(message_bubble)
 	
 	# Add to message container with spacing
 	message_container.add_child(message_row)
@@ -711,6 +879,26 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 	# Scroll to bottom after a short delay to ensure layout is complete
 	await get_tree().create_timer(0.1).timeout
 	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
+	
+# Add a new function to handle message resizing
+func _resize_messages():
+	if not message_container or not scroll_container:
+		return
+	
+	var container_width = scroll_container.size.x
+	if container_width <= 0:
+		return  # Avoid invalid or uninitialized sizes
+	
+	# Determine the target width for message bubbles as a percentage of the container width
+	var target_width = container_width * 0.7  # Adjust percentage as needed (e.g., 70%)
+	
+	# Iterate over all children in the message container
+	for child in message_container.get_children():
+		if child is HBoxContainer:  # Process message rows only
+			for subchild in child.get_children():
+				if subchild is PanelContainer:  # Resize message bubbles
+					if subchild.has_method("set_custom_minimum_size"):
+						subchild.set_custom_minimum_size(Vector2(target_width, 0))
 	
 func _on_reference_clicked(ref_data: Dictionary):
 	# Extract path and page from ref_data
