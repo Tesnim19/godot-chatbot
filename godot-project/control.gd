@@ -292,7 +292,7 @@ func _delete_document_confirmed(document_name: String):
 	# Send delete request to server
 	var http_request = HTTPRequest.new()
 	add_child(http_request)
-	var url = "http://localhost:8000/delete_document"
+	var url = "http://localhost:8000/delete"
 	
 	# Create the request body
 	var body = JSON.stringify({"document_name": document_name})
