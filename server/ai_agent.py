@@ -10,11 +10,12 @@ from transformers import T5Tokenizer, T5ForConditionalGeneration
 from server.helper.clean import clean_text
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
+import json
+from langchain.docstore.document import Document
 
 load_dotenv()
 class AIAgent:
     def __init__(self, model_type='t5-base'):
-        print(os.getenv('GOOGLE_API_KEY'))
         os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
         self.model_type = model_type
         self.document = None
@@ -54,9 +55,7 @@ class AIAgent:
 
     def load_single_document(self, path):
         document_loader = PyPDFLoader(path)
-        print('path: ', path)
         loaded_document = document_loader.load()
-        print("loaded document", loaded_document)
         self.document = [
             langchain_core.documents.base.Document(
                 page_content=clean_text(doc.page_content),
@@ -87,12 +86,15 @@ class AIAgent:
 
         self.db = Chroma.from_documents(
             self.document,
-            self.langchain_embeddings
+            self.langchain_embeddings,
+            collection_name="documents",
         )
         self.retriver = self.db.as_retriever()
         print(f"Saved {len(self.document)} chunks to {self.chroma_path}.")
 
-    def retrive_documents(self, question):
+    def retrive_documents(self, question, collection_name):
+        db = Chroma(collection_name=collection_name, embedding_function=self.langchain_embeddings)
+        self.retriver = db.as_retriever()
         # Retrieve the most relevant documents
         results = self.retriver.get_relevant_documents(question)
 
@@ -104,10 +106,56 @@ class AIAgent:
             return results
         
         return []
+    
+    def load_3d_models(self):
+        with open('./public/models/model_description.json', 'r') as f:
+            model_description = json.load(f)
+        
+        document_ids = [model["path"] for model in model_description]  # Use the path as the ID
+        documents = [
+            Document(page_content=model["description"], metadata={"path": model["path"]})
+            for model in model_description
+        ]
 
-    def generate_answer(self, question):
-        results = self.retrive_documents(question)
+        self.db = Chroma.from_documents(documents, 
+                                        self.langchain_embeddings, 
+                                        ids=document_ids, 
+                                        collection_name='3d_object_descriptions')
 
+        self.retriver = self.db.as_retriever()
+        
+        print(f"Saved {len(documents)} chunks to {self.chroma_path}. Models")
+    
+    def decide_action(self, question):
+        if self.model_type != 'gemini':
+            raise Exception("This method is only available for the Gemini model.")
+        
+        prompt = f"""You are an intelligent decision-making agent. Based on the input, determine whether to answer a question or generate a 3D model. 
+
+        If the input suggests generating a 3D model, return 'generate'.  
+        Otherwise, return 'answer'. Question: {question}"""
+        
+        decision = self.model.invoke(prompt)
+        decision = decision.content
+        
+        return decision
+        
+    def generate_object(self, question):
+        results = self.retrive_documents(question, '3d_object_descriptions')
+        
+        # select the top result
+        if not results:
+            return "No relevant documents found."
+        
+        document = results[0]
+        path = document.metadata.get('path')
+        
+        response = {'type': 'generate', 'response': path}
+
+        return path
+
+    def answer_question(self, question):
+        results = self.retrive_documents(question, 'documents')
         if not results:
             return "No relevant documents found."
 
@@ -147,8 +195,18 @@ class AIAgent:
                 "answer": predicted_answer,
                 "metadata": answer_with_metadata
             }
+            
+        final_response = {'type': 'answer', 'response': response}
 
-        return response
+        return final_response
+    def generate_answer(self, question):
+        decision = self.decide_action(question)
+        
+        if decision == 'generate':
+            return self.generate_object(question)
+        else:
+            return self.answer_question(question)
+
 
 #agent = AIAgent()
 #agent.load_document('./public')
