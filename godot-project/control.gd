@@ -274,7 +274,6 @@ func _populate_document_menu(documents: Array):
 	var popup_position = Vector2(chat_panel.position.x + 20, chat_panel.position.y + 50)
 	popup.popup(Rect2(popup_position, Vector2(300, 0))) 
 
-
 func _on_delete_document_pressed(document_name: String):
 	print("Attempting to delete document:", document_name)
 	
@@ -638,7 +637,7 @@ func _process(_delta):
 					connection_status = false
 					add_message("System", "Disconnected from server!", false)
 					_update_connection_indicator(false)
-					
+	
 # New function to update the connection indicator
 func _update_connection_indicator(is_connected: bool):
 	# Update color based on connection status
@@ -919,37 +918,143 @@ func _on_reference_clicked(ref_data: Dictionary):
 		print("File not found in project directory: ", file_check_path)
 		add_message("System", "Error: PDF file not found!", false)
 		return
-		
-	# Try to open the file directly with the OS
+	
+	# Platform-specific PDF opening with page number support
 	var error_code
+	
 	if OS.has_feature("windows"):
 		print("Attempting to open on Windows...")
-		# Try both methods
-		var pdf_url = "file:///" + local_path.replace("\\", "/") + "#page=" + str(page)
-		print("Opening PDF with URL: ", pdf_url)
-		error_code = OS.shell_open(pdf_url)
-		#error_code = OS.shell_open(local_path)
-		if error_code != OK:
-			print("shell_open failed with error: ", error_code)
-			# Try alternative method
-			error_code = OS.execute("cmd", ["/c", "start", "", local_path])
-			print("cmd execute result: ", error_code)
+		
+		# Method 1: Try Adobe Acrobat Reader format
+		# Format: acrobat.exe /A "page=N" "C:\path\to\file.pdf"
+		var acrobat_paths = [
+			"C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe",
+			"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe",
+			"C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe"
+		]
+		
+		var acrobat_found = false
+		for path in acrobat_paths:
+			var file = FileAccess.open(path, FileAccess.READ)
+			if file:
+				file.close()
+				print("Found Acrobat at: ", path)
+				error_code = OS.execute(path, ["/A", "page=" + str(page), local_path])
+				print("Acrobat launch result: ", error_code)
+				acrobat_found = true
+				break
+		
+		# Method 2: If Acrobat not found, try browser-style URL
+		if not acrobat_found:
+			var pdf_url = "file:///" + local_path.replace("\\", "/") + "#page=" + str(page)
+			print("Opening PDF with URL: ", pdf_url)
+			error_code = OS.shell_open(pdf_url)
+			print("shell_open URL result: ", error_code)
+			
+			# Method 3: Last resort - just open the file normally
+			if error_code != OK:
+				print("Falling back to default application...")
+				error_code = OS.shell_open(local_path)
+				print("shell_open fallback result: ", error_code)
+				
+				# Method 4: Ultimate fallback - use cmd
+				if error_code != OK:
+					error_code = OS.execute("cmd", ["/c", "start", "", local_path])
+					print("cmd execute result: ", error_code)
+	
 	elif OS.has_feature("macos"):
 		print("Attempting to open on macOS...")
-		error_code = OS.execute("open", [local_path])
-		print("open command result: ", error_code)
+		
+		# Method 1: Try Adobe Acrobat format (if installed)
+		var acrobat_paths = [
+			"/Applications/Adobe Acrobat Reader DC.app/Contents/MacOS/AdobeReader",
+			"/Applications/Adobe Acrobat DC.app/Contents/MacOS/Acrobat"
+		]
+		
+		var acrobat_found = false
+		for path in acrobat_paths:
+			var file = FileAccess.open(path, FileAccess.READ)
+			if file:
+				file.close()
+				print("Found Acrobat at: ", path)
+				error_code = OS.execute(path, [local_path, "--page=" + str(page)])
+				print("Acrobat launch result: ", error_code)
+				acrobat_found = true
+				break
+		
+		# Method 2: Try Preview.app with AppleScript (works for Preview)
+		if not acrobat_found:
+			var apple_script = """
+			osascript -e 'tell application "Preview" 
+				open "%s"
+				tell application "System Events"
+					tell process "Preview"
+						delay 1
+						keystroke "g" using {command down, option down}
+						delay 0.5
+						keystroke "%d"
+						keystroke return
+					end tell
+				end tell
+			end tell'
+			""" % [local_path, page]
+			
+			print("Running AppleScript: ", apple_script)
+			error_code = OS.execute("bash", ["-c", apple_script])
+			print("AppleScript result: ", error_code)
+			
+			# Method 3: Fallback - open normally
+			if error_code != OK:
+				print("Falling back to default application...")
+				error_code = OS.execute("open", [local_path])
+				print("open command result: ", error_code)
+	
 	elif OS.has_feature("linux"):
 		print("Attempting to open on Linux...")
-		error_code = OS.execute("xdg-open", [local_path])
-		print("xdg-open command result: ", error_code)
+		
+		# Method 1: Try Adobe Acrobat Reader if installed
+		var acrobat_paths = [
+			"/usr/bin/acroread",
+			"/opt/Adobe/Reader/bin/acroread"
+		]
+		
+		var acrobat_found = false
+		for path in acrobat_paths:
+			var file = FileAccess.open(path, FileAccess.READ)
+			if file:
+				file.close()
+				print("Found Acrobat at: ", path)
+				error_code = OS.execute(path, ["-page=" + str(page), local_path])
+				print("Acrobat launch result: ", error_code)
+				acrobat_found = true
+				break
+		
+		# Method 2: Try Evince (GNOME document viewer)
+		if not acrobat_found:
+			error_code = OS.execute("evince", ["-p", str(page), local_path])
+			print("Evince result: ", error_code)
+			
+			# Method 3: Try Okular (KDE document viewer)
+			if error_code != OK:
+				error_code = OS.execute("okular", ["-p", str(page), local_path])
+				print("Okular result: ", error_code)
+				
+				# Method 4: Fallback - use xdg-open
+				if error_code != OK:
+					print("Falling back to default application...")
+					error_code = OS.execute("xdg-open", [local_path])
+					print("xdg-open command result: ", error_code)
+	
 	else:
 		print("Unsupported platform")
 		add_message("System", "Error: Unsupported platform for opening PDFs!", false)
 		return
-		
+	
 	if error_code != OK:
 		print("Failed to open PDF. Error code: ", error_code)
 		add_message("System", "Error: Failed to open PDF!", false)
+	else:
+		add_message("System", "Opening PDF: " + filename + " at page " + str(page), false)
 
 func _notification(what):
 	if what == NOTIFICATION_EXIT_TREE:
