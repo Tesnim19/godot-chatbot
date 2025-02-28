@@ -286,8 +286,12 @@ func _on_delete_document_pressed(document_name: String):
 	confirm_dialog.popup_centered()
 
 # Confirmation callback
-func _delete_document_confirmed(document_name: String):
-	print("Deletion confirmed for:", document_name)
+func _delete_document_confirmed(document_path: String):
+	print("Deletion confirmed for:", document_path)
+	
+	# Extract just the filename from the path
+	var document_name = document_path.get_file()
+	print("Extracted filename:", document_name)
 	
 	# Send delete request to server
 	var http_request = HTTPRequest.new()
@@ -307,30 +311,23 @@ func _delete_document_confirmed(document_name: String):
 
 # Handle server response to deletion
 func _on_document_deletion_response(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
-	if result != HTTPRequest.RESULT_SUCCESS:
-		print("Error during document deletion:", result)
-		add_message("System", "Document deletion failed!", false)
-		return
+	print("Delete response received:")
+	print("Result:", result)
+	print("Response code:", response_code)
+	print("Headers:", headers)
 	
-	if response_code == 200:
-		var json = JSON.new()
-		var error = json.parse(body.get_string_from_utf8())
-		if error == OK:
-			var response = json.get_data()
-			print("Server response:", response)
-			
-			var success = response.get("success", false)
-			var message = response.get("message", "Unknown response")
-			
-			if success:
-				add_message("System", "Document deleted successfully: " + message, false)
-				# Refresh document list
-				_on_fetch_documents_pressed()
-			else:
-				add_message("System", "Failed to delete document: " + message, false)
+	if body.size() > 0:
+		var response_body = JSON.parse_string(body.get_string_from_utf8())
+		print("Response body:", response_body)
+	
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		print("Document deletion failed with code", response_code)
+		add_message("System", "Failed to delete document! Server returned: " + str(response_code), false)
 	else:
-		print("Document deletion failed with code:", response_code)
-		add_message("System", "Document deletion failed with code: " + str(response_code), false)
+		print("Document deleted successfully")
+		add_message("System", "Document deleted successfully!", false)
+				# Refresh document list
+		_on_fetch_documents_pressed()
 
 func _on_document_selected(document_name):
 	# If an integer is passed (from id_pressed signal), convert to document name
@@ -1051,6 +1048,7 @@ func _on_reference_clicked(ref_data: Dictionary):
 		return
 	
 	if error_code != OK:
+		print("error_code")
 		print("Failed to open PDF. Error code: ", error_code)
 		add_message("System", "Error: Failed to open PDF!", false)
 	else:
