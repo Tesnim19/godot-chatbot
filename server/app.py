@@ -7,6 +7,7 @@ import glob
 import os
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+import logging
 
 app = FastAPI()
 
@@ -87,3 +88,18 @@ async def update_model(request: ModelUpdateRequest, response: Response):
     except Exception as e:
         response.status_code = 500
         return {"error": str(e)}
+    
+class DocumentDeleteRequest(BaseModel):
+    document_name: str
+
+@app.post('/delete')
+async def delete_document(request: DocumentDeleteRequest, response: Response):
+    document_name = request.document_name
+    try:
+        os.remove(f"{project_path}/server/public/{document_name}")
+        response.status_code = 200
+        return {"message": "Document deleted successfully"}
+    except Exception as e:
+        logging.info(f"Error deleting a file {e}")
+        response.status_code = 500
+        return {"error": "Error deleting a file"}
