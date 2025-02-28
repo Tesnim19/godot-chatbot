@@ -904,43 +904,28 @@ func _on_reference_clicked(ref_data: Dictionary):
 	# Extract path and page from ref_data
 	var document_path = ref_data["path"]
 	var page = ref_data["page"]
-	
-	# Get just the filename from the path
-	var filename = document_path.get_file()
-	print("filename: ", filename)
-	
-	# Construct the local path relative to the project's pdfs directory
-	var local_path = ProjectSettings.globalize_path("res://pdfs/" + filename)
-	print("local_path: ", local_path)
-	
-	# More detailed file existence check
-	var file_check_path = "res://pdfs/" + filename
-	if not FileAccess.file_exists(file_check_path):
-		print("File not found in project directory: ", file_check_path)
-		add_message("System", "Error: PDF file not found!", false)
-		return
 		
 	# Try to open the file directly with the OS
 	var error_code
 	if OS.has_feature("windows"):
 		print("Attempting to open on Windows...")
 		# Try both methods
-		var pdf_url = "file:///" + local_path.replace("\\", "/") + "#page=" + str(page)
+		var pdf_url = "file:///" + document_path.replace("\\", "/") + "#page=" + str(page)
 		print("Opening PDF with URL: ", pdf_url)
 		error_code = OS.shell_open(pdf_url)
 		#error_code = OS.shell_open(local_path)
 		if error_code != OK:
 			print("shell_open failed with error: ", error_code)
 			# Try alternative method
-			error_code = OS.execute("cmd", ["/c", "start", "", local_path])
+			error_code = OS.execute("cmd", ["/c", "start", "", document_path])
 			print("cmd execute result: ", error_code)
 	elif OS.has_feature("macos"):
 		print("Attempting to open on macOS...")
-		error_code = OS.execute("open", [local_path])
+		error_code = OS.execute("open", [document_path])
 		print("open command result: ", error_code)
 	elif OS.has_feature("linux"):
 		print("Attempting to open on Linux...")
-		error_code = OS.execute("xdg-open", [local_path])
+		error_code = OS.execute("xdg-open", [document_path])
 		print("xdg-open command result: ", error_code)
 	else:
 		print("Unsupported platform")
