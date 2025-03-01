@@ -44,6 +44,10 @@ class AIAgent:
     def load_document(self, path):
         document_loader = PyPDFDirectoryLoader(path)
         loaded_documents = document_loader.load()  # List of Document objects
+        
+        if not loaded_documents or len(loaded_documents) == 0:
+            return 
+
         self.document = [
             langchain_core.documents.base.Document(
                 page_content=clean_text(doc.page_content), 
@@ -106,11 +110,30 @@ class AIAgent:
             return results
         
         return []
-    
+
     def load_3d_models(self):
-        with open('./public/models/model_description.json', 'r') as f:
-            model_description = json.load(f)
-        
+        json_path = './public/models/model_description.json'
+
+        # Check if the file exists
+        if not os.path.exists(json_path):
+            return
+
+        # Check if the file is empty
+        if os.path.getsize(json_path) == 0:
+            return
+
+        # Load JSON data
+        with open(json_path, 'r') as f:
+            try:
+                model_description = json.load(f)
+            except json.JSONDecodeError:
+                return
+
+        # Check if the JSON is an empty array
+        if not model_description or not isinstance(model_description, list):
+            return
+
+        # Process valid data
         document_ids = [model["path"] for model in model_description]  # Use the path as the ID
         documents = [
             Document(page_content=model["description"], metadata={"path": model["path"]})
@@ -123,9 +146,9 @@ class AIAgent:
                                         collection_name='3d_object_descriptions')
 
         self.retriver = self.db.as_retriever()
-        
+
         print(f"Saved {len(documents)} chunks to {self.chroma_path}. Models")
-    
+
     def decide_action(self, question):
         if self.model_type != 'gemini':
             raise Exception("This method is only available for the Gemini model.")
@@ -152,7 +175,7 @@ class AIAgent:
         
         response = {'type': 'generate', 'response': path}
 
-        return path
+        return response
 
     def answer_question(self, question):
         results = self.retrive_documents(question, 'documents')
