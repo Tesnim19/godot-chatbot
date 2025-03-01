@@ -172,6 +172,7 @@ func _on_documents_fetched(result: int, response_code: int, headers: PackedStrin
 		if error == OK:
 			var response = json.get_data()
 			var documents = response.get("documents", [])
+			print("Documents", documents)
 			_populate_document_menu(documents)
 		else:
 			print("Failed to parse JSON response")
@@ -274,7 +275,6 @@ func _populate_document_menu(documents: Array):
 	var popup_position = Vector2(chat_panel.position.x + 20, chat_panel.position.y + 50)
 	popup.popup(Rect2(popup_position, Vector2(300, 0))) 
 
-
 func _on_delete_document_pressed(document_name: String):
 	print("Attempting to delete document:", document_name)
 	
@@ -287,13 +287,17 @@ func _on_delete_document_pressed(document_name: String):
 	confirm_dialog.popup_centered()
 
 # Confirmation callback
-func _delete_document_confirmed(document_name: String):
-	print("Deletion confirmed for:", document_name)
+func _delete_document_confirmed(document_path: String):
+	print("Deletion confirmed for:", document_path)
+	
+	# Extract just the filename from the path
+	var document_name = document_path.get_file()
+	print("Extracted filename:", document_name)
 	
 	# Send delete request to server
 	var http_request = HTTPRequest.new()
 	add_child(http_request)
-	var url = "http://localhost:8000/delete_document"
+	var url = "http://localhost:8000/delete"
 	
 	# Create the request body
 	var body = JSON.stringify({"document_name": document_name})
@@ -308,30 +312,23 @@ func _delete_document_confirmed(document_name: String):
 
 # Handle server response to deletion
 func _on_document_deletion_response(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
-	if result != HTTPRequest.RESULT_SUCCESS:
-		print("Error during document deletion:", result)
-		add_message("System", "Document deletion failed!", false)
-		return
+	print("Delete response received:")
+	print("Result:", result)
+	print("Response code:", response_code)
+	print("Headers:", headers)
 	
-	if response_code == 200:
-		var json = JSON.new()
-		var error = json.parse(body.get_string_from_utf8())
-		if error == OK:
-			var response = json.get_data()
-			print("Server response:", response)
-			
-			var success = response.get("success", false)
-			var message = response.get("message", "Unknown response")
-			
-			if success:
-				add_message("System", "Document deleted successfully: " + message, false)
-				# Refresh document list
-				_on_fetch_documents_pressed()
-			else:
-				add_message("System", "Failed to delete document: " + message, false)
+	if body.size() > 0:
+		var response_body = JSON.parse_string(body.get_string_from_utf8())
+		print("Response body:", response_body)
+	
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		print("Document deletion failed with code", response_code)
+		add_message("System", "Failed to delete document! Server returned: " + str(response_code), false)
 	else:
-		print("Document deletion failed with code:", response_code)
-		add_message("System", "Document deletion failed with code: " + str(response_code), false)
+		print("Document deleted successfully")
+		add_message("System", "Document deleted successfully!", false)
+				# Refresh document list
+		_on_fetch_documents_pressed()
 
 func _on_document_selected(document_name):
 	# If an integer is passed (from id_pressed signal), convert to document name
@@ -638,7 +635,7 @@ func _process(_delta):
 					connection_status = false
 					add_message("System", "Disconnected from server!", false)
 					_update_connection_indicator(false)
-					
+	
 # New function to update the connection indicator
 func _update_connection_indicator(is_connected: bool):
 	# Update color based on connection status
@@ -904,37 +901,172 @@ func _on_reference_clicked(ref_data: Dictionary):
 	# Extract path and page from ref_data
 	var document_path = ref_data["path"]
 	var page = ref_data["page"]
-		
-	# Try to open the file directly with the OS
-	var error_code
+	
+	# Get just the filename from the path
+	var filename = document_path.get_file()
+	print("filename: ", filename)
+	
+	## Construct the local path relative to the project's pdfs directory
+	#var local_path = ProjectSettings.globalize_path("res://pdfs/" + filename)
+	#print("local_path: ", local_path)
+	#
+	## More detailed file existence check
+	#var file_check_path = "res://pdfs/" + filename
+	#if not FileAccess.file_exists(file_check_path):
+		#print("File not found in project directory: ", file_check_path)
+		#add_message("System", "Error: PDF file not found!", false)
+		#return
+	
+	# Platform-specific PDF opening with page number support
+	var success = false
+	
 	if OS.has_feature("windows"):
 		print("Attempting to open on Windows...")
-		# Try both methods
-		var pdf_url = "file:///" + document_path.replace("\\", "/") + "#page=" + str(page)
-		print("Opening PDF with URL: ", pdf_url)
-		error_code = OS.shell_open(pdf_url)
-		#error_code = OS.shell_open(local_path)
-		if error_code != OK:
-			print("shell_open failed with error: ", error_code)
-			# Try alternative method
-			error_code = OS.execute("cmd", ["/c", "start", "", document_path])
-			print("cmd execute result: ", error_code)
+		
+		# Method 1: Try Adobe Acrobat Reader format
+		# Format: acrobat.exe /A "page=N" "C:\path\to\file.pdf"
+		var acrobat_paths = [
+			"C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe",
+			"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe",
+			"C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe"
+		]
+		
+		var acrobat_found = false
+		for path in acrobat_paths:
+			var file = FileAccess.open(path, FileAccess.READ)
+			if file:
+				file.close()
+				print("Found Acrobat at: ", path)
+				var exit_code = OS.execute(path, ["/A", "page=" + str(page), document_path])
+				print("Acrobat launch result: ", exit_code)
+				# Acrobat might return a non-zero exit code even when successful
+				# So we'll consider this a success regardless of exit code
+				acrobat_found = true
+				success = true
+				break
+		
+		# Method 2: If Acrobat not found, try browser-style URL
+		if not acrobat_found:
+			var pdf_url = "file:///" + document_path.replace("\\", "/") + "#page=" + str(page)
+			print("Opening PDF with URL: ", pdf_url)
+			var result = OS.shell_open(pdf_url)
+			print("shell_open URL result: ", result)
+			success = (result == OK)
+			
+			# Method 3: Last resort - just open the file normally
+			if not success:
+				print("Falling back to default application...")
+				result = OS.shell_open(document_path)
+				print("shell_open fallback result: ", result)
+				success = (result == OK)
+				
+				# Method 4: Ultimate fallback - use cmd
+				if not success:
+					var exit_code = OS.execute("cmd", ["/c", "start", "", document_path])
+					print("cmd execute result: ", exit_code)
+					# cmd.exe typically returns 0 even if the launched application has issues
+					success = true
+	
 	elif OS.has_feature("macos"):
 		print("Attempting to open on macOS...")
-		error_code = OS.execute("open", [document_path])
-		print("open command result: ", error_code)
+		
+		# Method 1: Try Adobe Acrobat format (if installed)
+		var acrobat_paths = [
+			"/Applications/Adobe Acrobat Reader DC.app/Contents/MacOS/AdobeReader",
+			"/Applications/Adobe Acrobat DC.app/Contents/MacOS/Acrobat"
+		]
+		
+		var acrobat_found = false
+		for path in acrobat_paths:
+			var file = FileAccess.open(path, FileAccess.READ)
+			if file:
+				file.close()
+				print("Found Acrobat at: ", path)
+				var exit_code = OS.execute(path, [document_path, "--page=" + str(page)])
+				print("Acrobat launch result: ", exit_code)
+				acrobat_found = true
+				success = true
+				break
+		
+		# Method 2: Try Preview.app with AppleScript (works for Preview)
+		if not acrobat_found:
+			var apple_script = """
+			osascript -e 'tell application "Preview" 
+				open "%s"
+				tell application "System Events"
+					tell process "Preview"
+						delay 1
+						keystroke "g" using {command down, option down}
+						delay 0.5
+						keystroke "%d"
+						keystroke return
+					end tell
+				end tell
+			end tell'
+			""" % [document_path, page]
+			
+			print("Running AppleScript: ", apple_script)
+			var exit_code = OS.execute("bash", ["-c", apple_script])
+			print("AppleScript result: ", exit_code)
+			success = true
+			
+			# Method 3: Fallback - open normally
+			if exit_code != 0:
+				print("Falling back to default application...")
+				exit_code = OS.execute("open", [document_path])
+				print("open command result: ", exit_code)
+				success = (exit_code == 0)
+	
 	elif OS.has_feature("linux"):
 		print("Attempting to open on Linux...")
-		error_code = OS.execute("xdg-open", [document_path])
-		print("xdg-open command result: ", error_code)
+		
+		# Method 1: Try Adobe Acrobat Reader if installed
+		var acrobat_paths = [
+			"/usr/bin/acroread",
+			"/opt/Adobe/Reader/bin/acroread"
+		]
+		
+		var acrobat_found = false
+		for path in acrobat_paths:
+			var file = FileAccess.open(path, FileAccess.READ)
+			if file:
+				file.close()
+				print("Found Acrobat at: ", path)
+				var exit_code = OS.execute(path, ["-page=" + str(page), document_path])
+				print("Acrobat launch result: ", exit_code)
+				acrobat_found = true
+				success = true
+				break
+		
+		# Method 2: Try Evince (GNOME document viewer)
+		if not acrobat_found:
+			var exit_code = OS.execute("evince", ["-p", str(page), document_path])
+			print("Evince result: ", exit_code)
+			success = (exit_code == 0)
+			
+			# Method 3: Try Okular (KDE document viewer)
+			if not success:
+				exit_code = OS.execute("okular", ["-p", str(page), document_path])
+				print("Okular result: ", exit_code)
+				success = (exit_code == 0)
+				
+				# Method 4: Fallback - use xdg-open
+				if not success:
+					print("Falling back to default application...")
+					exit_code = OS.execute("xdg-open", [document_path])
+					print("xdg-open command result: ", exit_code)
+					success = (exit_code == 0)
+	
 	else:
 		print("Unsupported platform")
 		add_message("System", "Error: Unsupported platform for opening PDFs!", false)
 		return
-		
-	if error_code != OK:
-		print("Failed to open PDF. Error code: ", error_code)
+	
+	if not success:
+		print("Failed to open PDF.")
 		add_message("System", "Error: Failed to open PDF!", false)
+	else:
+		print("System", "Opening PDF: " + filename + " at page " + str(page), false)
 
 func _notification(what):
 	if what == NOTIFICATION_EXIT_TREE:
