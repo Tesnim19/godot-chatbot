@@ -943,7 +943,7 @@ func _on_reference_clicked(ref_data: Dictionary):
 		
 		# Method 2: If Acrobat not found, try browser-style URL
 		if not acrobat_found:
-			var pdf_url = "file:///" + local_path.replace("\\", "/") + "#page=" + str(page)
+			var pdf_url = "file:///" + document_path.replace("\\", "/") + "#page=" + str(page)
 			print("Opening PDF with URL: ", pdf_url)
 			error_code = OS.shell_open(pdf_url)
 			print("shell_open URL result: ", error_code)
@@ -956,7 +956,7 @@ func _on_reference_clicked(ref_data: Dictionary):
 				
 				# Method 4: Ultimate fallback - use cmd
 				if error_code != OK:
-					error_code = OS.execute("cmd", ["/c", "start", "", local_path])
+					error_code = OS.execute("cmd", ["/c", "start", "", document_path])
 					print("cmd execute result: ", error_code)
 	
 	elif OS.has_feature("macos"):
