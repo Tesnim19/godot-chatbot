@@ -19,7 +19,7 @@ class AIAgent:
         os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
         self.model_type = model_type
         self.document = None
-        self.chroma_path = 'chroma'
+        self.chroma_path = './chroma'
         self.db = None
         self.retriver = None
         #self.langchain_embeddings = HuggingFaceEmbeddings(model_name="distilbert-base-nli-stsb-mean-tokens")
@@ -41,21 +41,21 @@ class AIAgent:
         else:
             self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
 
-    def load_document(self, path):
-        document_loader = PyPDFDirectoryLoader(path)
-        loaded_documents = document_loader.load()  # List of Document objects
-        
-        if not loaded_documents or len(loaded_documents) == 0:
-            return 
-
-        self.document = [
-            langchain_core.documents.base.Document(
-                page_content=clean_text(doc.page_content), 
-                metadata=doc.metadata
-            )
-            for doc in loaded_documents
-        ]
-        self.split_text()
+    # def load_document(self, path):
+        # document_loader = PyPDFDirectoryLoader(path)
+        # loaded_documents = document_loader.load()  # List of Document objects
+        # 
+        # if not loaded_documents or len(loaded_documents) == 0:
+        #     return 
+# 
+        # self.document = [
+        #     langchain_core.documents.base.Document(
+        #         page_content=clean_text(doc.page_content), 
+        #         metadata=doc.metadata
+        #     )
+        #     for doc in loaded_documents
+        # ]
+        # self.split_text()
 
     def load_single_document(self, path):
         document_loader = PyPDFLoader(path)
@@ -70,9 +70,6 @@ class AIAgent:
         self.split_text()
 
     def split_text(self):
-        if os.path.exists(self.chroma_path):
-            shutil.rmtree(self.chroma_path)
-
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=300,  # Reduce chunk size
             chunk_overlap=50,  # Adjust overlap
@@ -85,19 +82,24 @@ class AIAgent:
         self.tokenize_and_store()
 
     def tokenize_and_store(self):
-        if os.path.exists(self.chroma_path):
-            shutil.rmtree(self.chroma_path)
-
         self.db = Chroma.from_documents(
             self.document,
             self.langchain_embeddings,
             collection_name="documents",
+            persist_directory=self.chroma_path
         )
         self.retriver = self.db.as_retriever()
         print(f"Saved {len(self.document)} chunks to {self.chroma_path}.")
 
-    def retrive_documents(self, question, collection_name):
-        db = Chroma(collection_name=collection_name, embedding_function=self.langchain_embeddings)
+    def retrive_documents(self, question, collection_name, persistant=True):
+        if persistant:
+            db = Chroma(collection_name=collection_name, 
+                    embedding_function=self.langchain_embeddings,
+                    persist_directory=self.chroma_path)
+        else:
+            # for now store the 3d objects in memory
+            db = Chroma(collection_name=collection_name, 
+                    embedding_function=self.langchain_embeddings)
         self.retriver = db.as_retriever()
         # Retrieve the most relevant documents
         results = self.retriver.get_relevant_documents(question)
@@ -164,7 +166,7 @@ class AIAgent:
         return decision
         
     def generate_object(self, question):
-        results = self.retrive_documents(question, '3d_object_descriptions')
+        results = self.retrive_documents(question, '3d_object_descriptions', False)
         
         # select the top result
         if not results:
@@ -230,7 +232,22 @@ class AIAgent:
         else:
             return self.answer_question(question)
 
-
+    def delete_from_chroma(self, source):
+        try:
+            db = Chroma(collection_name='documents', 
+                        embedding_function=self.langchain_embeddings,
+                        persist_directory=self.chroma_path)
+            coll = db.get()
+            ids = coll['ids']
+            metadatas = coll['metadatas']
+            ids_to_delete = []
+            
+            for i in range(len(ids)):
+                if metadatas[i].get('source') == source:
+                    ids_to_delete.append(ids[i])
+            db.delete(ids_to_delete)
+        except Exception as e:
+            raise Exception(f"Error deleting from Chroma: {str(e)}")
 #agent = AIAgent()
 #agent.load_document('./public')
 #answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
