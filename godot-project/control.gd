@@ -917,7 +917,7 @@ func _on_reference_clicked(ref_data: Dictionary):
 		return
 	
 	# Platform-specific PDF opening with page number support
-	var error_code
+	var success = false
 	
 	if OS.has_feature("windows"):
 		print("Attempting to open on Windows...")
@@ -936,28 +936,35 @@ func _on_reference_clicked(ref_data: Dictionary):
 			if file:
 				file.close()
 				print("Found Acrobat at: ", path)
-				error_code = OS.execute(path, ["/A", "page=" + str(page), local_path])
-				print("Acrobat launch result: ", error_code)
+				var exit_code = OS.execute(path, ["/A", "page=" + str(page), local_path])
+				print("Acrobat launch result: ", exit_code)
+				# Acrobat might return a non-zero exit code even when successful
+				# So we'll consider this a success regardless of exit code
 				acrobat_found = true
+				success = true
 				break
 		
 		# Method 2: If Acrobat not found, try browser-style URL
 		if not acrobat_found:
-			var pdf_url = "file:///" + document_path.replace("\\", "/") + "#page=" + str(page)
+			var pdf_url = "file:///" + local_path.replace("\\", "/") + "#page=" + str(page)
 			print("Opening PDF with URL: ", pdf_url)
-			error_code = OS.shell_open(pdf_url)
-			print("shell_open URL result: ", error_code)
+			var result = OS.shell_open(pdf_url)
+			print("shell_open URL result: ", result)
+			success = (result == OK)
 			
 			# Method 3: Last resort - just open the file normally
-			if error_code != OK:
+			if not success:
 				print("Falling back to default application...")
-				error_code = OS.shell_open(local_path)
-				print("shell_open fallback result: ", error_code)
+				result = OS.shell_open(local_path)
+				print("shell_open fallback result: ", result)
+				success = (result == OK)
 				
 				# Method 4: Ultimate fallback - use cmd
-				if error_code != OK:
-					error_code = OS.execute("cmd", ["/c", "start", "", document_path])
-					print("cmd execute result: ", error_code)
+				if not success:
+					var exit_code = OS.execute("cmd", ["/c", "start", "", local_path])
+					print("cmd execute result: ", exit_code)
+					# cmd.exe typically returns 0 even if the launched application has issues
+					success = true
 	
 	elif OS.has_feature("macos"):
 		print("Attempting to open on macOS...")
@@ -974,9 +981,10 @@ func _on_reference_clicked(ref_data: Dictionary):
 			if file:
 				file.close()
 				print("Found Acrobat at: ", path)
-				error_code = OS.execute(path, [local_path, "--page=" + str(page)])
-				print("Acrobat launch result: ", error_code)
+				var exit_code = OS.execute(path, [local_path, "--page=" + str(page)])
+				print("Acrobat launch result: ", exit_code)
 				acrobat_found = true
+				success = true
 				break
 		
 		# Method 2: Try Preview.app with AppleScript (works for Preview)
@@ -997,14 +1005,16 @@ func _on_reference_clicked(ref_data: Dictionary):
 			""" % [local_path, page]
 			
 			print("Running AppleScript: ", apple_script)
-			error_code = OS.execute("bash", ["-c", apple_script])
-			print("AppleScript result: ", error_code)
+			var exit_code = OS.execute("bash", ["-c", apple_script])
+			print("AppleScript result: ", exit_code)
+			success = true
 			
 			# Method 3: Fallback - open normally
-			if error_code != OK:
+			if exit_code != 0:
 				print("Falling back to default application...")
-				error_code = OS.execute("open", [local_path])
-				print("open command result: ", error_code)
+				exit_code = OS.execute("open", [local_path])
+				print("open command result: ", exit_code)
+				success = (exit_code == 0)
 	
 	elif OS.has_feature("linux"):
 		print("Attempting to open on Linux...")
@@ -1021,38 +1031,41 @@ func _on_reference_clicked(ref_data: Dictionary):
 			if file:
 				file.close()
 				print("Found Acrobat at: ", path)
-				error_code = OS.execute(path, ["-page=" + str(page), local_path])
-				print("Acrobat launch result: ", error_code)
+				var exit_code = OS.execute(path, ["-page=" + str(page), local_path])
+				print("Acrobat launch result: ", exit_code)
 				acrobat_found = true
+				success = true
 				break
 		
 		# Method 2: Try Evince (GNOME document viewer)
 		if not acrobat_found:
-			error_code = OS.execute("evince", ["-p", str(page), local_path])
-			print("Evince result: ", error_code)
+			var exit_code = OS.execute("evince", ["-p", str(page), local_path])
+			print("Evince result: ", exit_code)
+			success = (exit_code == 0)
 			
 			# Method 3: Try Okular (KDE document viewer)
-			if error_code != OK:
-				error_code = OS.execute("okular", ["-p", str(page), local_path])
-				print("Okular result: ", error_code)
+			if not success:
+				exit_code = OS.execute("okular", ["-p", str(page), local_path])
+				print("Okular result: ", exit_code)
+				success = (exit_code == 0)
 				
 				# Method 4: Fallback - use xdg-open
-				if error_code != OK:
+				if not success:
 					print("Falling back to default application...")
-					error_code = OS.execute("xdg-open", [local_path])
-					print("xdg-open command result: ", error_code)
+					exit_code = OS.execute("xdg-open", [local_path])
+					print("xdg-open command result: ", exit_code)
+					success = (exit_code == 0)
 	
 	else:
 		print("Unsupported platform")
 		add_message("System", "Error: Unsupported platform for opening PDFs!", false)
 		return
 	
-	if error_code != OK:
-		print("error_code")
-		print("Failed to open PDF. Error code: ", error_code)
+	if not success:
+		print("Failed to open PDF.")
 		add_message("System", "Error: Failed to open PDF!", false)
 	else:
-		add_message("System", "Opening PDF: " + filename + " at page " + str(page), false)
+		print("System", "Opening PDF: " + filename + " at page " + str(page), false)
 
 func _notification(what):
 	if what == NOTIFICATION_EXIT_TREE:
