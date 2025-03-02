@@ -172,8 +172,12 @@ func _on_documents_fetched(result: int, response_code: int, headers: PackedStrin
 		if error == OK:
 			var response = json.get_data()
 			var documents = response.get("documents", [])
-			print("Documents", documents)
-			_populate_document_menu(documents)
+			var document_filenames = []
+			for doc in documents:
+				# Extract just the filename from the path
+				var document_name = doc.get_file()
+				document_filenames.append(document_name)
+			_populate_document_menu(document_filenames)
 		else:
 			print("Failed to parse JSON response")
 			add_message("System", "Failed to parse documents response!", false)
@@ -182,98 +186,48 @@ func _on_documents_fetched(result: int, response_code: int, headers: PackedStrin
 		add_message("System", "Fetch failed with code: " + str(response_code), false)
 
 func _populate_document_menu(documents: Array):
-	# Create a popup for the document list
-	var popup = PopupPanel.new()
-	popup.name = "DocumentListPopup"
-	
-	# Create a margin container inside popup for padding
-	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_bottom", 10)
-	popup.add_child(margin)
-	
-	# Create the document list container
-	var doc_list_container = VBoxContainer.new()
-	doc_list_container.name = "DocumentListContainer"
-	doc_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	margin.add_child(doc_list_container)
-	
-	# Add a header
-	var header = Label.new()
-	header.text = "Available Documents"
-	header.add_theme_font_size_override("font_size", 18)
-	header.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
-	doc_list_container.add_child(header)
-	
-	# Add a separator
-	var separator = HSeparator.new()
-	doc_list_container.add_child(separator)
-	
-	#clear the document map
+	var popup = fetch_documents_button.get_popup()
+	popup.clear()  # Clear previous items
 	document_map.clear()
 	
-	# Add each document with a delete button
+	# Add each document as an item with a custom layout
 	for i in range(documents.size()):
-		var doc = documents[i]
-		document_map[i] = doc
+		var filename = documents[i]
 		
-		var doc_row = HBoxContainer.new()
-		doc_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Create the item ID for the document
+		var doc_id = i
 		
-		# Document name button (clickable to open)
-		var doc_button = Button.new()
-		doc_button.text = doc
-		doc_button.flat = true
-		doc_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		doc_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		doc_button.pressed.connect(_on_document_selected.bind(doc))
+		# Add the document item with just the filename
+		popup.add_item(filename, doc_id)
+		document_map[doc_id] = filename
 		
-		# Delete button
-		var delete_button = Button.new()
-		delete_button.text = "×"
-		delete_button.tooltip_text = "Delete document"
-		delete_button.add_theme_font_size_override("font_size", 18)
-		delete_button.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
-		delete_button.pressed.connect(_on_delete_document_pressed.bind(doc))
+		# Add a delete option right next to it
+		var delete_id = i + 1000  # Use a different range for delete actions
+		popup.add_item("  🗑️ Delete", delete_id)  # Using trash icon emoji
+		document_map[delete_id] = filename
 		
-		# Add style to delete button
-		var delete_style = StyleBoxFlat.new()
-		delete_style.bg_color = Color(0.5, 0.1, 0.1, 0.6)
-		delete_style.corner_radius_top_left = 4
-		delete_style.corner_radius_top_right = 4
-		delete_style.corner_radius_bottom_left = 4
-		delete_style.corner_radius_bottom_right = 4
-		delete_button.add_theme_stylebox_override("normal", delete_style)
-		
-		doc_row.add_child(doc_button)
-		doc_row.add_child(delete_button)
-		doc_list_container.add_child(doc_row)
+		# Add a small separator if not the last item
+		if i < documents.size() - 1:
+			popup.add_separator()
 	
-	# If no documents, show a message
-	if documents.size() == 0:
-		var no_docs_label = Label.new()
-		no_docs_label.text = "No documents available"
-		no_docs_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-		doc_list_container.add_child(no_docs_label)
+	# Ensure the signal is connected only once
+	if not popup.id_pressed.is_connected(_on_popup_item_selected):
+		popup.id_pressed.connect(_on_popup_item_selected)
 	
-	# Add a close button
-	var close_button = Button.new()
-	close_button.text = "Close"
-	close_button.pressed.connect(func(): popup.hide())
-	doc_list_container.add_child(close_button)
-	
-	# Add popup to the scene
-	add_child(popup)
+	# Show the dropdown menu
+	popup.popup()
 
-	## Ensure the signal is connected only once
-	#if not popup.id_pressed.is_connected(_on_document_selected):
-		#popup.id_pressed.connect(_on_document_selected)
+func _on_popup_item_selected(id):
+	var filename = document_map[id]
 	
-	# Show popup near the top of the chat panel
-	var popup_position = Vector2(chat_panel.position.x + 20, chat_panel.position.y + 50)
-	popup.popup(Rect2(popup_position, Vector2(300, 0))) 
+	# Check if this is a document open or delete action
+	if id >= 1000:  # Delete action
+		_on_delete_document_pressed(filename)
+	else:  # Open action
+		var project_dir = ProjectSettings.globalize_path("res://")
+		var file_dir = project_dir + "../server/public/" + filename
+		_on_reference_clicked({'path': file_dir, 'page': 1})
+		print("Opening: " + filename)
 
 func _on_delete_document_pressed(document_name: String):
 	print("Attempting to delete document:", document_name)
@@ -287,12 +241,8 @@ func _on_delete_document_pressed(document_name: String):
 	confirm_dialog.popup_centered()
 
 # Confirmation callback
-func _delete_document_confirmed(document_path: String):
-	print("Deletion confirmed for:", document_path)
-	
-	# Extract just the filename from the path
-	var document_name = document_path.get_file()
-	print("Extracted filename:", document_name)
+func _delete_document_confirmed(document_name: String):
+	print("Deletion confirmed for:", document_name)
 	
 	# Send delete request to server
 	var http_request = HTTPRequest.new()
@@ -329,20 +279,6 @@ func _on_document_deletion_response(result: int, response_code: int, headers: Pa
 		add_message("System", "Document deleted successfully!", false)
 				# Refresh document list
 		_on_fetch_documents_pressed()
-
-func _on_document_selected(document_name):
-	# If an integer is passed (from id_pressed signal), convert to document name
-	if typeof(document_name) == TYPE_INT:
-		if document_map.has(document_name):
-			document_name = document_map[document_name]
-		else:
-			print("Error: Invalid document ID:", document_name)
-			return
-	
-	var project_dir = ProjectSettings.globalize_path("res://")
-	var file_dir = project_dir + "../server/public/" + document_name
-	_on_reference_clicked({'path': file_dir, 'page': 0})
-	print("Opening document:", file_dir)
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -826,10 +762,10 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		metadata_container.add_child(refs_label)
 		
 		for ref in metadata:
-			# Adjust document path to match the Godot project directory
-			ref.document_path = "res://pdfs/" + ref.document_path.get_file()
-			var ref_button = Button.new()
 			var pdf_name = ref["document_path"].get_file()  # Extract file name from path
+			var project_dir = ProjectSettings.globalize_path("res://")
+			ref.document_path = project_dir + "../server/public/" + pdf_name
+			var ref_button = Button.new()
 			ref_button.text = "• %s (Page %d)" % [pdf_name, ref["page_number"]]
 			ref_button.flat = true
 			ref_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -901,6 +837,8 @@ func _on_reference_clicked(ref_data: Dictionary):
 	# Extract path and page from ref_data
 	var document_path = ref_data["path"]
 	var page = ref_data["page"]
+	
+	print("Document_path", document_path)
 	
 	# Get just the filename from the path
 	var filename = document_path.get_file()
@@ -1066,7 +1004,7 @@ func _on_reference_clicked(ref_data: Dictionary):
 		print("Failed to open PDF.")
 		add_message("System", "Error: Failed to open PDF!", false)
 	else:
-		print("System", "Opening PDF: " + filename + " at page " + str(page), false)
+		print("Opening PDF: " + filename + " at page " + str(page))
 
 func _notification(what):
 	if what == NOTIFICATION_EXIT_TREE:
