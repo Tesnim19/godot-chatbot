@@ -172,8 +172,12 @@ func _on_documents_fetched(result: int, response_code: int, headers: PackedStrin
 		if error == OK:
 			var response = json.get_data()
 			var documents = response.get("documents", [])
-			print("Documents", documents)
-			_populate_document_menu(documents)
+			var document_filenames = []
+			for doc in documents:
+				# Extract just the filename from the path
+				var document_name = doc.get_file()
+				document_filenames.append(document_name)
+			_populate_document_menu(document_filenames)
 		else:
 			print("Failed to parse JSON response")
 			add_message("System", "Failed to parse documents response!", false)
@@ -182,98 +186,48 @@ func _on_documents_fetched(result: int, response_code: int, headers: PackedStrin
 		add_message("System", "Fetch failed with code: " + str(response_code), false)
 
 func _populate_document_menu(documents: Array):
-	# Create a popup for the document list
-	var popup = PopupPanel.new()
-	popup.name = "DocumentListPopup"
-	
-	# Create a margin container inside popup for padding
-	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_bottom", 10)
-	popup.add_child(margin)
-	
-	# Create the document list container
-	var doc_list_container = VBoxContainer.new()
-	doc_list_container.name = "DocumentListContainer"
-	doc_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	margin.add_child(doc_list_container)
-	
-	# Add a header
-	var header = Label.new()
-	header.text = "Available Documents"
-	header.add_theme_font_size_override("font_size", 18)
-	header.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
-	doc_list_container.add_child(header)
-	
-	# Add a separator
-	var separator = HSeparator.new()
-	doc_list_container.add_child(separator)
-	
-	#clear the document map
+	var popup = fetch_documents_button.get_popup()
+	popup.clear()  # Clear previous items
 	document_map.clear()
 	
-	# Add each document with a delete button
+	# Add each document as an item with a custom layout
 	for i in range(documents.size()):
-		var doc = documents[i]
-		document_map[i] = doc
+		var filename = documents[i]
 		
-		var doc_row = HBoxContainer.new()
-		doc_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Create the item ID for the document
+		var doc_id = i
 		
-		# Document name button (clickable to open)
-		var doc_button = Button.new()
-		doc_button.text = doc
-		doc_button.flat = true
-		doc_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		doc_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		doc_button.pressed.connect(_on_document_selected.bind(doc))
+		# Add the document item with just the filename
+		popup.add_item(filename, doc_id)
+		document_map[doc_id] = filename
 		
-		# Delete button
-		var delete_button = Button.new()
-		delete_button.text = "×"
-		delete_button.tooltip_text = "Delete document"
-		delete_button.add_theme_font_size_override("font_size", 18)
-		delete_button.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
-		delete_button.pressed.connect(_on_delete_document_pressed.bind(doc))
+		# Add a delete option right next to it
+		var delete_id = i + 1000  # Use a different range for delete actions
+		popup.add_item("  🗑️ Delete", delete_id)  # Using trash icon emoji
+		document_map[delete_id] = filename
 		
-		# Add style to delete button
-		var delete_style = StyleBoxFlat.new()
-		delete_style.bg_color = Color(0.5, 0.1, 0.1, 0.6)
-		delete_style.corner_radius_top_left = 4
-		delete_style.corner_radius_top_right = 4
-		delete_style.corner_radius_bottom_left = 4
-		delete_style.corner_radius_bottom_right = 4
-		delete_button.add_theme_stylebox_override("normal", delete_style)
-		
-		doc_row.add_child(doc_button)
-		doc_row.add_child(delete_button)
-		doc_list_container.add_child(doc_row)
+		# Add a small separator if not the last item
+		if i < documents.size() - 1:
+			popup.add_separator()
 	
-	# If no documents, show a message
-	if documents.size() == 0:
-		var no_docs_label = Label.new()
-		no_docs_label.text = "No documents available"
-		no_docs_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-		doc_list_container.add_child(no_docs_label)
+	# Ensure the signal is connected only once
+	if not popup.id_pressed.is_connected(_on_popup_item_selected):
+		popup.id_pressed.connect(_on_popup_item_selected)
 	
-	# Add a close button
-	var close_button = Button.new()
-	close_button.text = "Close"
-	close_button.pressed.connect(func(): popup.hide())
-	doc_list_container.add_child(close_button)
-	
-	# Add popup to the scene
-	add_child(popup)
+	# Show the dropdown menu
+	popup.popup()
 
-	## Ensure the signal is connected only once
-	#if not popup.id_pressed.is_connected(_on_document_selected):
-		#popup.id_pressed.connect(_on_document_selected)
+func _on_popup_item_selected(id):
+	var filename = document_map[id]
 	
-	# Show popup near the top of the chat panel
-	var popup_position = Vector2(chat_panel.position.x + 20, chat_panel.position.y + 50)
-	popup.popup(Rect2(popup_position, Vector2(300, 0))) 
+	# Check if this is a document open or delete action
+	if id >= 1000:  # Delete action
+		_on_delete_document_pressed(filename)
+	else:  # Open action
+		var project_dir = ProjectSettings.globalize_path("res://")
+		var file_dir = project_dir + "../server/public/" + filename
+		_on_reference_clicked({'path': file_dir, 'page': 1})
+		print("Opening: " + filename)
 
 func _on_delete_document_pressed(document_name: String):
 	print("Attempting to delete document:", document_name)
@@ -287,12 +241,8 @@ func _on_delete_document_pressed(document_name: String):
 	confirm_dialog.popup_centered()
 
 # Confirmation callback
-func _delete_document_confirmed(document_path: String):
-	print("Deletion confirmed for:", document_path)
-	
-	# Extract just the filename from the path
-	var document_name = document_path.get_file()
-	print("Extracted filename:", document_name)
+func _delete_document_confirmed(document_name: String):
+	print("Deletion confirmed for:", document_name)
 	
 	# Send delete request to server
 	var http_request = HTTPRequest.new()
@@ -329,20 +279,6 @@ func _on_document_deletion_response(result: int, response_code: int, headers: Pa
 		add_message("System", "Document deleted successfully!", false)
 				# Refresh document list
 		_on_fetch_documents_pressed()
-
-func _on_document_selected(document_name):
-	# If an integer is passed (from id_pressed signal), convert to document name
-	if typeof(document_name) == TYPE_INT:
-		if document_map.has(document_name):
-			document_name = document_map[document_name]
-		else:
-			print("Error: Invalid document ID:", document_name)
-			return
-	
-	var project_dir = ProjectSettings.globalize_path("res://")
-	var file_dir = project_dir + "../server/public/" + document_name
-	_on_reference_clicked({'path': file_dir, 'page': 0})
-	print("Opening document:", file_dir)
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -826,10 +762,10 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		metadata_container.add_child(refs_label)
 		
 		for ref in metadata:
-			# Adjust document path to match the Godot project directory
-			ref.document_path = "res://pdfs/" + ref.document_path.get_file()
-			var ref_button = Button.new()
 			var pdf_name = ref["document_path"].get_file()  # Extract file name from path
+			var project_dir = ProjectSettings.globalize_path("res://")
+			ref.document_path = project_dir + "../server/public/" + pdf_name
+			var ref_button = Button.new()
 			ref_button.text = "• %s (Page %d)" % [pdf_name, ref["page_number"]]
 			ref_button.flat = true
 			ref_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -898,175 +834,135 @@ func _resize_messages():
 						subchild.set_custom_minimum_size(Vector2(target_width, 0))
 	
 func _on_reference_clicked(ref_data: Dictionary):
-	# Extract path and page from ref_data
 	var document_path = ref_data["path"]
-	var page = ref_data["page"]
+	var page = ref_data.get("page", 1)
+	page = max(1, page)  # Ensure minimum page is 1
 	
-	# Get just the filename from the path
-	var filename = document_path.get_file()
-	print("filename: ", filename)
+	# Convert to absolute path
+	var absolute_path = ProjectSettings.globalize_path(document_path)
 	
-	## Construct the local path relative to the project's pdfs directory
-	#var local_path = ProjectSettings.globalize_path("res://pdfs/" + filename)
-	#print("local_path: ", local_path)
-	#
-	## More detailed file existence check
-	#var file_check_path = "res://pdfs/" + filename
-	#if not FileAccess.file_exists(file_check_path):
-		#print("File not found in project directory: ", file_check_path)
-		#add_message("System", "Error: PDF file not found!", false)
-		#return
-	
-	# Platform-specific PDF opening with page number support
+	if !FileAccess.file_exists(absolute_path):
+		add_message("System", "PDF file not found!", false)
+		return
+
 	var success = false
 	
 	if OS.has_feature("windows"):
-		print("Attempting to open on Windows...")
-		
-		# Method 1: Try Adobe Acrobat Reader format
-		# Format: acrobat.exe /A "page=N" "C:\path\to\file.pdf"
-		var acrobat_paths = [
-			"C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe",
-			"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe",
-			"C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe"
+		# Windows readers (priority order)
+		var readers = [
+			{
+				"name": "Adobe Acrobat",
+				"paths": [
+					"C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe",
+					"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe"
+				],
+				"args": ["/A", "page=%d" % page, absolute_path]
+			},
+			{
+				"name": "SumatraPDF",
+				"paths": [
+					OS.get_environment("ProgramFiles") + "\\SumatraPDF\\SumatraPDF.exe",
+					OS.get_environment("ProgramW6432") + "\\SumatraPDF\\SumatraPDF.exe"
+				],
+				"args": ["-page", str(page), absolute_path]
+			},
+			{
+				"name": "Default Browser",
+				"method": "url",
+				"url": "file:///" + absolute_path.replace("\\", "/") + "#page=" + str(page)
+			}
 		]
 		
-		var acrobat_found = false
-		for path in acrobat_paths:
-			var file = FileAccess.open(path, FileAccess.READ)
-			if file:
-				file.close()
-				print("Found Acrobat at: ", path)
-				var exit_code = OS.execute(path, ["/A", "page=" + str(page), document_path])
-				print("Acrobat launch result: ", exit_code)
-				# Acrobat might return a non-zero exit code even when successful
-				# So we'll consider this a success regardless of exit code
-				acrobat_found = true
-				success = true
-				break
-		
-		# Method 2: If Acrobat not found, try browser-style URL
-		if not acrobat_found:
-			var pdf_url = "file:///" + document_path.replace("\\", "/") + "#page=" + str(page)
-			print("Opening PDF with URL: ", pdf_url)
-			var result = OS.shell_open(pdf_url)
-			print("shell_open URL result: ", result)
-			success = (result == OK)
-			
-			# Method 3: Last resort - just open the file normally
-			if not success:
-				print("Falling back to default application...")
-				result = OS.shell_open(document_path)
-				print("shell_open fallback result: ", result)
-				success = (result == OK)
+		for reader in readers:
+			if reader.has("method") && reader["method"] == "url":
+				success = OS.shell_open(reader["url"]) == OK
+				if success: break
+				continue
 				
-				# Method 4: Ultimate fallback - use cmd
-				if not success:
-					var exit_code = OS.execute("cmd", ["/c", "start", "", document_path])
-					print("cmd execute result: ", exit_code)
-					# cmd.exe typically returns 0 even if the launched application has issues
-					success = true
-	
+			for exe_path in reader["paths"]:
+				if FileAccess.file_exists(exe_path):
+					var pid = OS.create_process(exe_path, reader["args"], false)
+					if pid != 0:
+						success = true
+						break
+			if success: break
+
 	elif OS.has_feature("macos"):
-		print("Attempting to open on macOS...")
-		
-		# Method 1: Try Adobe Acrobat format (if installed)
-		var acrobat_paths = [
-			"/Applications/Adobe Acrobat Reader DC.app/Contents/MacOS/AdobeReader",
-			"/Applications/Adobe Acrobat DC.app/Contents/MacOS/Acrobat"
-		]
-		
-		var acrobat_found = false
-		for path in acrobat_paths:
-			var file = FileAccess.open(path, FileAccess.READ)
-			if file:
-				file.close()
-				print("Found Acrobat at: ", path)
-				var exit_code = OS.execute(path, [document_path, "--page=" + str(page)])
-				print("Acrobat launch result: ", exit_code)
-				acrobat_found = true
-				success = true
-				break
-		
-		# Method 2: Try Preview.app with AppleScript (works for Preview)
-		if not acrobat_found:
-			var apple_script = """
-			osascript -e 'tell application "Preview" 
-				open "%s"
-				tell application "System Events"
-					tell process "Preview"
-						delay 1
-						keystroke "g" using {command down, option down}
-						delay 0.5
-						keystroke "%d"
-						keystroke return
-					end tell
+		# macOS readers
+		var readers = [
+			{
+				"name": "Adobe Acrobat",
+				"path": "/Applications/Adobe Acrobat Reader DC.app/Contents/MacOS/AdobeReader",
+				"args": [absolute_path, "--page=%d" % page]
+			},
+			{
+				"name": "Preview",
+				"script": """
+				tell application "Preview" to open POSIX file "%s"
+				delay 1
+				tell application "System Events" to tell process "Preview"
+					keystroke "g" using {command down, option down}
+					delay 0.5
+					keystroke "%d"
+					keystroke return
 				end tell
-			end tell'
-			""" % [document_path, page]
-			
-			print("Running AppleScript: ", apple_script)
-			var exit_code = OS.execute("bash", ["-c", apple_script])
-			print("AppleScript result: ", exit_code)
-			success = true
-			
-			# Method 3: Fallback - open normally
-			if exit_code != 0:
-				print("Falling back to default application...")
-				exit_code = OS.execute("open", [document_path])
-				print("open command result: ", exit_code)
-				success = (exit_code == 0)
-	
-	elif OS.has_feature("linux"):
-		print("Attempting to open on Linux...")
-		
-		# Method 1: Try Adobe Acrobat Reader if installed
-		var acrobat_paths = [
-			"/usr/bin/acroread",
-			"/opt/Adobe/Reader/bin/acroread"
+				""" % [absolute_path, page]
+			},
+			{
+				"name": "Foxit Reader",
+				"path": "/Applications/Foxit PDF Reader.app/Contents/MacOS/Foxit PDF Reader",
+				"args": [absolute_path, "--page=%d" % page]
+			}
 		]
 		
-		var acrobat_found = false
-		for path in acrobat_paths:
-			var file = FileAccess.open(path, FileAccess.READ)
-			if file:
-				file.close()
-				print("Found Acrobat at: ", path)
-				var exit_code = OS.execute(path, ["-page=" + str(page), document_path])
-				print("Acrobat launch result: ", exit_code)
-				acrobat_found = true
-				success = true
-				break
+		for reader in readers:
+			if reader.has("script"):
+				var result = OS.execute("osascript", ["-e", reader["script"]])
+				if result == 0:
+					success = true
+					break
+			elif FileAccess.file_exists(reader["path"]):
+				var pid = OS.create_process(reader["path"], reader["args"], false)
+				if pid != 0:
+					success = true
+					break
+
+	elif OS.has_feature("linux"):
+		# Linux readers
+		var readers = [
+			{
+				"name": "Evince",
+				"cmd": "evince",
+				"args": ["-p", str(page), absolute_path]
+			},
+			{
+				"name": "Okular",
+				"cmd": "okular",
+				"args": ["-p", str(page), absolute_path]
+			},
+			{
+				"name": "qpdfview",
+				"cmd": "qpdfview",
+				"args": ["--page", str(page), absolute_path]
+			}
+		]
 		
-		# Method 2: Try Evince (GNOME document viewer)
-		if not acrobat_found:
-			var exit_code = OS.execute("evince", ["-p", str(page), document_path])
-			print("Evince result: ", exit_code)
-			success = (exit_code == 0)
-			
-			# Method 3: Try Okular (KDE document viewer)
-			if not success:
-				exit_code = OS.execute("okular", ["-p", str(page), document_path])
-				print("Okular result: ", exit_code)
-				success = (exit_code == 0)
-				
-				# Method 4: Fallback - use xdg-open
-				if not success:
-					print("Falling back to default application...")
-					exit_code = OS.execute("xdg-open", [document_path])
-					print("xdg-open command result: ", exit_code)
-					success = (exit_code == 0)
-	
+		for reader in readers:
+			var exit_code = OS.execute("which", [reader["cmd"]])
+			if exit_code == 0:
+				var pid = OS.create_process(reader["cmd"], reader["args"], false)
+				if pid != 0:
+					success = true
+					break
+
+	if !success:
+		# Fallback to system default
+		success = OS.shell_open(absolute_path) == OK
+
+	if !success:
+		add_message("System", "Failed to open PDF!", false)
 	else:
-		print("Unsupported platform")
-		add_message("System", "Error: Unsupported platform for opening PDFs!", false)
-		return
-	
-	if not success:
-		print("Failed to open PDF.")
-		add_message("System", "Error: Failed to open PDF!", false)
-	else:
-		print("System", "Opening PDF: " + filename + " at page " + str(page), false)
+		print("PDF opened successfully with page ", page)
 
 func _notification(what):
 	if what == NOTIFICATION_EXIT_TREE:
