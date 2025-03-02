@@ -51,46 +51,48 @@ func _exit():
 	print("Trying to exit process")
 	if server_process_id != -1:
 		print("Stopping the server...")
-		# Terminate the process
-		OS.kill(server_process_id) 
-		server_process_id = -1  # Reset the server process ID
+		OS.kill(server_process_id)
+		server_process_id = -1
 		print("Server stopped.")
-	
+
 func start_python_server():
 	var project_dir = ProjectSettings.globalize_path("res://")
 	var server_dir = project_dir + "../server/"
-		# check if the server file exitst
 	var server_file = server_dir + "app.py"
-	
-	var server_exist = FileAccess.file_exists(server_file)
-	
-	if server_exist != true:
+
+	if not FileAccess.file_exists(server_file):
 		print("Server file doesn't exist")
-		
+		return
+
 	var venv_dir = server_dir + ".venv"
-		
 	var args_create_venv = ["-m", "venv", venv_dir]
-	
 	var command_create_venv = "python"
-	
+
+	if OS.get_name() == "Windows":
+		args_create_venv = ["-m", "venv", venv_dir.replace("/", "\\")]
+		if OS.has_feature("standalone"):
+			if OS.execute("py", ["--version"]) == 0:
+				command_create_venv = "py"
+			else:
+				command_create_venv = "python"
 	var output_create_venv = []
-	
 	var execute_code_create_venv = OS.execute(command_create_venv, args_create_venv, output_create_venv, true)
-	
+
 	print(execute_code_create_venv)
-	print("Ouput creating venv: \n", "\n".join(output_create_venv))
-	
+	print("Output creating venv: \n", "\n".join(output_create_venv))
+
 	_execute_server_startup_command(server_dir)
-	#var thread = Thread.new()
-	#thread.start(_execute_server_startup_command.bind(server_dir))
 
 func _execute_server_startup_command(server_dir):
 	var args_fastapi = ["run", server_dir + "app.py"]
-	
-	var command_fastapi = server_dir + ".venv/bin/fastapi"
-	
-	server_process_id = OS.create_process(command_fastapi, args_fastapi)
+	var command_fastapi = ""
 
+	if OS.get_name() == "Windows":
+		command_fastapi = server_dir.replace("/", "\\") + ".venv\\Scripts\\fastapi"
+	else:
+		command_fastapi = server_dir + ".venv/bin/fastapi"
+
+	server_process_id = OS.create_process(command_fastapi, args_fastapi)
 	print("server id: ", server_process_id)
 	
 func setup_ui():
