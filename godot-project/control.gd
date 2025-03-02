@@ -732,26 +732,43 @@ func _handle_websocket_message(message: String):
 	var json = JSON.new()
 	var error = json.parse(message)
 	if error == OK:
-		var response = json.get_data()
-		if response is Dictionary:
-			if response.has("answer"):
-				# Handle structured response with metadata
-				var answer_text = response.answer
-				var metadata = response.get("metadata", [])
-				add_message("Assistant", answer_text, false, metadata)
-			else:
-				# Handle different message types
-				match response.get("type"):
+		var data = json.get_data()
+		if data is Dictionary:
+			if data.has("type"):
+				match data.get("type"):
+					"answer":
+						if data.has("response") and data.response is Dictionary:
+							var answer_text = data.response.get("answer", "")
+							var metadata = data.response.get("metadata", [])
+							add_message("Assistant", answer_text, false, metadata)
+						else:
+							print("Malformed answer message format")
+							add_message("System", "Error: Received malformed answer message", false)
+					"generate":
+						# Handle generate type messages for 3D models
+						if data.has("response") and data.response is String:
+							var model_path = data.response
+							# Call your function to display the 3D model
+							display_3d_model(model_path)
+							add_message("System", "Generated 3D model: " + model_path.get_file(), false)
+						else:
+							print("Malformed generate message format")
+							add_message("System", "Error: Received malformed generate message", false)
+
 					"chat":
-						add_message("Assistant", response.get("message"), false)
+						# Handle basic chat messages
+						if data.has("message"):
+							add_message("Assistant", data.get("message"), false)
+						else:
+							add_message("Assistant", "Received chat message with no content", false)
 					"error":
-						print("Error from server: ", response.get("message"))
-						add_message("System", "Error: " + response.get("message"), false)
+						print("Error from server: ", data.get("message"))
+						add_message("System", "Error: " + data.get("message"), false)
 					"chunk_received":
-						print("Chunk received: ", response.get("message"))
+						print("Chunk received: ", data.get("message"))
 						# Optionally handle chunk notifications
 					"transfer_complete":
-						print("Transfer complete: ", response.get("message"))
+						print("Transfer complete: ", data.get("message"))
 						# Optionally handle transfer completion
 					_:
 						# Default case for unknown message types
@@ -759,6 +776,10 @@ func _handle_websocket_message(message: String):
 	else:
 		# Handle non-JSON messages
 		add_message("Assistant", message, false)
+		
+func display_3d_model(model_path: String):
+	print("Loading 3D model from path: ", model_path)
+	pass
 
 func _on_send_pressed():
 	if chat_input.text.strip_edges() != "":
