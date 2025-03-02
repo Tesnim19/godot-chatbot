@@ -915,6 +915,23 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		
 		content.add_child(metadata_container)
 	
+	# Add timestamp
+	var current_time = Time.get_datetime_dict_from_system()
+	var timestamp_label = Label.new()
+	timestamp_label.text = "%02d:%02d" % [current_time.hour, current_time.minute]
+	timestamp_label.add_theme_font_size_override("font_size", 9)
+	timestamp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	timestamp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if is_user else HORIZONTAL_ALIGNMENT_LEFT
+	timestamp_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	# Add a small margin above the timestamp
+	var timestamp_margin = MarginContainer.new()
+	timestamp_margin.add_theme_constant_override("margin_top", 4)
+	timestamp_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	timestamp_margin.add_child(timestamp_label)
+	
+	content.add_child(timestamp_margin)
+	
 	# Assemble the message
 	content_margin.add_child(content)
 	message_bubble.add_child(content_margin)
