@@ -6,6 +6,7 @@ var send_button: Button
 var upload_button: Button
 var reconnect_button: Button
 var tooltip_button: Button
+var model_selection_button: Button
 var websocket: WebSocketPeer
 var socket_url = "ws://localhost:8000/ws"
 var connection_status = false
@@ -344,7 +345,25 @@ func setup_chat_interface():
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
+	title_container.add_child(title)
+	
+	# Model Selection Dropdown
+	model_selection_button = MenuButton.new()
+	model_selection_button.text = "Models"
+	model_selection_button.custom_minimum_size = Vector2(100, 0)
+	
+	# Style the model selection button
+	var model_button_style = StyleBoxFlat.new()
+	model_button_style.bg_color = Color(0.3, 0.6, 0.9)  # Light blue
+	model_button_style.corner_radius_top_left = 6
+	model_button_style.corner_radius_top_right = 6
+	model_button_style.corner_radius_bottom_left = 6
+	model_button_style.corner_radius_bottom_right = 6
+	model_selection_button.add_theme_stylebox_override("normal", model_button_style)
+	header.add_child(model_selection_button)
+	
+	# Connect button press event - Fixed: Changed to proper function call
+	model_selection_button.pressed.connect(self._initialize_models)
 
 	# Button for displaying tooltip
 	tooltip_button = Button.new()
@@ -516,6 +535,121 @@ func setup_chat_interface():
 	message_margin.add_child(message_container)
 	scroll_container.add_child(message_margin)
 	output_container.add_child(scroll_container)
+
+# Initialize with hardcoded models instead of fetching from backend
+func _initialize_models():
+	var popup = model_selection_button.get_popup()
+	popup.clear()
+	
+	# Add our hardcoded models
+	var models = ["gemini", "t5-base"]
+	
+	for i in range(models.size()):
+		var model = models[i]
+		popup.add_item(model, i)
+	
+	# Connect the signal for model selection
+	if not popup.id_pressed.is_connected(self._on_model_selected):
+		popup.id_pressed.connect(self._on_model_selected)
+	
+	# Set default model
+	model_selection_button.text = models[0]
+
+
+# This function handles when a model is selected from the dropdown
+func _on_model_selected(id):
+	var popup = model_selection_button.get_popup()
+	var model_name = popup.get_item_text(popup.get_item_index(id))
+	
+	# Show selection in progress
+	var previous_text = model_selection_button.text
+	model_selection_button.text = "Switching..."
+	
+	# Create HTTP request to change the model
+	var http_request = HTTPRequest.new()
+	add_child(http_request)
+	http_request.add_to_group("model_change_request") # Add to group for easy reference later
+	
+	# Store the model name so we can reference it in the response handler
+	http_request.set_meta("model_name", model_name)
+	http_request.set_meta("previous_model", previous_text)
+	http_request.request_completed.connect(self._on_model_change_completed)
+	
+	# Prepare the request
+	var url = "http://localhost:8000/model"
+	var headers = ["Content-Type: application/json"]
+	var body = JSON.stringify({"model_type": model_name})
+	
+	# Debug output
+	print("Sending model change request: " + body)
+	
+	# Send the POST request to change the model
+	var error = http_request.request(url, headers, HTTPClient.METHOD_POST, body)
+	
+	if error != OK:
+		push_error("An error occurred in the HTTP request to change model.")
+		model_selection_button.text = previous_text
+		add_message("System", "Failed to switch model. Please try again later.", false)
+
+# This function handles HTTP response for model change
+func _on_model_change_completed(result, response_code, headers, body):
+	print("Model change response received: Result=" + str(result) + ", Code=" + str(response_code))
+	
+	# Get the HTTP request node that triggered this callback
+	var http_request = get_node("../HTTPRequest") # Try direct path first
+	
+	if http_request == null:
+		# Try getting from the group if direct path failed
+		if get_tree().get_nodes_in_group("model_change_request").size() > 0:
+			http_request = get_tree().get_nodes_in_group("model_change_request")[0]
+		else:
+			push_error("HTTP request node not found")
+			model_selection_button.text = "Models" # Default fallback
+			return
+	
+	var model_name = http_request.get_meta("model_name")
+	var previous_model = http_request.get_meta("previous_model")
+	
+	print("Model name from request: " + model_name)
+	
+	# Check if we got a valid response
+	if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+		# Parse response
+		var json = JSON.new()
+		var parse_result = json.parse(body.get_string_from_utf8())
+		
+		if parse_result == OK:
+			var response_data = json.get_data()
+			print("Response data: " + str(response_data))
+			
+			# Update the button text
+			model_selection_button.text = model_name
+			
+			# Notify the user about the model change
+			add_message("System", "Model switched to " + model_name, false)
+		else:
+			push_error("JSON parsing error")
+			model_selection_button.text = previous_model
+			add_message("System", "Failed to switch model: Invalid response format", false)
+	else:
+		# Handle error
+		var error_message = "Unknown error"
+		
+		if body and body.get_string_from_utf8():
+			var json = JSON.new()
+			var parse_result = json.parse(body.get_string_from_utf8())
+			
+			if parse_result == OK:
+				var response_data = json.get_data()
+				if response_data.has("error"):
+					error_message = response_data["error"]
+		
+		push_error("Model change failed: " + error_message)
+		model_selection_button.text = previous_model
+		add_message("System", "Failed to switch model: " + error_message, false)
+	
+	# Remove the HTTP request node
+	http_request.queue_free()
 
 func _on_toggle_chat():
 	is_chat_open = !is_chat_open
