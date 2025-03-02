@@ -834,177 +834,135 @@ func _resize_messages():
 						subchild.set_custom_minimum_size(Vector2(target_width, 0))
 	
 func _on_reference_clicked(ref_data: Dictionary):
-	# Extract path and page from ref_data
 	var document_path = ref_data["path"]
-	var page = ref_data["page"]
+	var page = ref_data.get("page", 1)
+	page = max(1, page)  # Ensure minimum page is 1
 	
-	print("Document_path", document_path)
+	# Convert to absolute path
+	var absolute_path = ProjectSettings.globalize_path(document_path)
 	
-	# Get just the filename from the path
-	var filename = document_path.get_file()
-	print("filename: ", filename)
-	
-	## Construct the local path relative to the project's pdfs directory
-	#var local_path = ProjectSettings.globalize_path("res://pdfs/" + filename)
-	#print("local_path: ", local_path)
-	#
-	## More detailed file existence check
-	#var file_check_path = "res://pdfs/" + filename
-	#if not FileAccess.file_exists(file_check_path):
-		#print("File not found in project directory: ", file_check_path)
-		#add_message("System", "Error: PDF file not found!", false)
-		#return
-	
-	# Platform-specific PDF opening with page number support
+	if !FileAccess.file_exists(absolute_path):
+		add_message("System", "PDF file not found!", false)
+		return
+
 	var success = false
 	
 	if OS.has_feature("windows"):
-		print("Attempting to open on Windows...")
-		
-		# Method 1: Try Adobe Acrobat Reader format
-		# Format: acrobat.exe /A "page=N" "C:\path\to\file.pdf"
-		var acrobat_paths = [
-			"C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe",
-			"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe",
-			"C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe"
+		# Windows readers (priority order)
+		var readers = [
+			{
+				"name": "Adobe Acrobat",
+				"paths": [
+					"C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe",
+					"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe"
+				],
+				"args": ["/A", "page=%d" % page, absolute_path]
+			},
+			{
+				"name": "SumatraPDF",
+				"paths": [
+					OS.get_environment("ProgramFiles") + "\\SumatraPDF\\SumatraPDF.exe",
+					OS.get_environment("ProgramW6432") + "\\SumatraPDF\\SumatraPDF.exe"
+				],
+				"args": ["-page", str(page), absolute_path]
+			},
+			{
+				"name": "Default Browser",
+				"method": "url",
+				"url": "file:///" + absolute_path.replace("\\", "/") + "#page=" + str(page)
+			}
 		]
 		
-		var acrobat_found = false
-		for path in acrobat_paths:
-			var file = FileAccess.open(path, FileAccess.READ)
-			if file:
-				file.close()
-				print("Found Acrobat at: ", path)
-				var exit_code = OS.execute(path, ["/A", "page=" + str(page), document_path])
-				print("Acrobat launch result: ", exit_code)
-				# Acrobat might return a non-zero exit code even when successful
-				# So we'll consider this a success regardless of exit code
-				acrobat_found = true
-				success = true
-				break
-		
-		# Method 2: If Acrobat not found, try browser-style URL
-		if not acrobat_found:
-			var pdf_url = "file:///" + document_path.replace("\\", "/") + "#page=" + str(page)
-			print("Opening PDF with URL: ", pdf_url)
-			var result = OS.shell_open(pdf_url)
-			print("shell_open URL result: ", result)
-			success = (result == OK)
-			
-			# Method 3: Last resort - just open the file normally
-			if not success:
-				print("Falling back to default application...")
-				result = OS.shell_open(document_path)
-				print("shell_open fallback result: ", result)
-				success = (result == OK)
+		for reader in readers:
+			if reader.has("method") && reader["method"] == "url":
+				success = OS.shell_open(reader["url"]) == OK
+				if success: break
+				continue
 				
-				# Method 4: Ultimate fallback - use cmd
-				if not success:
-					var exit_code = OS.execute("cmd", ["/c", "start", "", document_path])
-					print("cmd execute result: ", exit_code)
-					# cmd.exe typically returns 0 even if the launched application has issues
-					success = true
-	
+			for exe_path in reader["paths"]:
+				if FileAccess.file_exists(exe_path):
+					var pid = OS.create_process(exe_path, reader["args"], false)
+					if pid != 0:
+						success = true
+						break
+			if success: break
+
 	elif OS.has_feature("macos"):
-		print("Attempting to open on macOS...")
-		
-		# Method 1: Try Adobe Acrobat format (if installed)
-		var acrobat_paths = [
-			"/Applications/Adobe Acrobat Reader DC.app/Contents/MacOS/AdobeReader",
-			"/Applications/Adobe Acrobat DC.app/Contents/MacOS/Acrobat"
-		]
-		
-		var acrobat_found = false
-		for path in acrobat_paths:
-			var file = FileAccess.open(path, FileAccess.READ)
-			if file:
-				file.close()
-				print("Found Acrobat at: ", path)
-				var exit_code = OS.execute(path, [document_path, "--page=" + str(page)])
-				print("Acrobat launch result: ", exit_code)
-				acrobat_found = true
-				success = true
-				break
-		
-		# Method 2: Try Preview.app with AppleScript (works for Preview)
-		if not acrobat_found:
-			var apple_script = """
-			osascript -e 'tell application "Preview" 
-				open "%s"
-				tell application "System Events"
-					tell process "Preview"
-						delay 1
-						keystroke "g" using {command down, option down}
-						delay 0.5
-						keystroke "%d"
-						keystroke return
-					end tell
+		# macOS readers
+		var readers = [
+			{
+				"name": "Adobe Acrobat",
+				"path": "/Applications/Adobe Acrobat Reader DC.app/Contents/MacOS/AdobeReader",
+				"args": [absolute_path, "--page=%d" % page]
+			},
+			{
+				"name": "Preview",
+				"script": """
+				tell application "Preview" to open POSIX file "%s"
+				delay 1
+				tell application "System Events" to tell process "Preview"
+					keystroke "g" using {command down, option down}
+					delay 0.5
+					keystroke "%d"
+					keystroke return
 				end tell
-			end tell'
-			""" % [document_path, page]
-			
-			print("Running AppleScript: ", apple_script)
-			var exit_code = OS.execute("bash", ["-c", apple_script])
-			print("AppleScript result: ", exit_code)
-			success = true
-			
-			# Method 3: Fallback - open normally
-			if exit_code != 0:
-				print("Falling back to default application...")
-				exit_code = OS.execute("open", [document_path])
-				print("open command result: ", exit_code)
-				success = (exit_code == 0)
-	
-	elif OS.has_feature("linux"):
-		print("Attempting to open on Linux...")
-		
-		# Method 1: Try Adobe Acrobat Reader if installed
-		var acrobat_paths = [
-			"/usr/bin/acroread",
-			"/opt/Adobe/Reader/bin/acroread"
+				""" % [absolute_path, page]
+			},
+			{
+				"name": "Foxit Reader",
+				"path": "/Applications/Foxit PDF Reader.app/Contents/MacOS/Foxit PDF Reader",
+				"args": [absolute_path, "--page=%d" % page]
+			}
 		]
 		
-		var acrobat_found = false
-		for path in acrobat_paths:
-			var file = FileAccess.open(path, FileAccess.READ)
-			if file:
-				file.close()
-				print("Found Acrobat at: ", path)
-				var exit_code = OS.execute(path, ["-page=" + str(page), document_path])
-				print("Acrobat launch result: ", exit_code)
-				acrobat_found = true
-				success = true
-				break
+		for reader in readers:
+			if reader.has("script"):
+				var result = OS.execute("osascript", ["-e", reader["script"]])
+				if result == 0:
+					success = true
+					break
+			elif FileAccess.file_exists(reader["path"]):
+				var pid = OS.create_process(reader["path"], reader["args"], false)
+				if pid != 0:
+					success = true
+					break
+
+	elif OS.has_feature("linux"):
+		# Linux readers
+		var readers = [
+			{
+				"name": "Evince",
+				"cmd": "evince",
+				"args": ["-p", str(page), absolute_path]
+			},
+			{
+				"name": "Okular",
+				"cmd": "okular",
+				"args": ["-p", str(page), absolute_path]
+			},
+			{
+				"name": "qpdfview",
+				"cmd": "qpdfview",
+				"args": ["--page", str(page), absolute_path]
+			}
+		]
 		
-		# Method 2: Try Evince (GNOME document viewer)
-		if not acrobat_found:
-			var exit_code = OS.execute("evince", ["-p", str(page), document_path])
-			print("Evince result: ", exit_code)
-			success = (exit_code == 0)
-			
-			# Method 3: Try Okular (KDE document viewer)
-			if not success:
-				exit_code = OS.execute("okular", ["-p", str(page), document_path])
-				print("Okular result: ", exit_code)
-				success = (exit_code == 0)
-				
-				# Method 4: Fallback - use xdg-open
-				if not success:
-					print("Falling back to default application...")
-					exit_code = OS.execute("xdg-open", [document_path])
-					print("xdg-open command result: ", exit_code)
-					success = (exit_code == 0)
-	
+		for reader in readers:
+			var exit_code = OS.execute("which", [reader["cmd"]])
+			if exit_code == 0:
+				var pid = OS.create_process(reader["cmd"], reader["args"], false)
+				if pid != 0:
+					success = true
+					break
+
+	if !success:
+		# Fallback to system default
+		success = OS.shell_open(absolute_path) == OK
+
+	if !success:
+		add_message("System", "Failed to open PDF!", false)
 	else:
-		print("Unsupported platform")
-		add_message("System", "Error: Unsupported platform for opening PDFs!", false)
-		return
-	
-	if not success:
-		print("Failed to open PDF.")
-		add_message("System", "Error: Failed to open PDF!", false)
-	else:
-		print("Opening PDF: " + filename + " at page " + str(page))
+		print("PDF opened successfully with page ", page)
 
 func _notification(what):
 	if what == NOTIFICATION_EXIT_TREE:
