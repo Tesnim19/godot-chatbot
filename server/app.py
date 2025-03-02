@@ -55,6 +55,7 @@ async def upload_pdf(file: UploadFile, response: Response):
         agent.load_single_document(f'./public/{file.filename}')
         return {"message": "File uploaded successfully"}
     except Exception as e:
+        os.remove(f"{project_path}/server/public/{file.filename}")
         response.status_code = 500
         return {"error": str(e)}
 

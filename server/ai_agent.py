@@ -182,7 +182,12 @@ class AIAgent:
     def answer_question(self, question):
         results = self.retrive_documents(question, 'documents')
         if not results:
-            return "No relevant documents found."
+            response = {
+                'answer': 'Sorry, I could not find any relevant documents for your question.',
+                'metadata': []
+            }
+            return {'type': 'answer', 
+                    'response': response}
 
         # Extract the content from the results
         documents = "\n\n".join([result.page_content for result in results])
