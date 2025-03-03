@@ -54,6 +54,16 @@ class CodeAgent:
             Ensure Proper Data Alignment and Compatibility
 
             Make sure the buffer size correctly matches the sum of vertices and indices data sizes.
+            
+            Ensure all sides of the object remain visible when rotated.
+
+            Set doubleSided = True in the material definition to prevent face culling.
+
+            Correctly calculate and assign vertex normals.
+
+            Use counterclockwise vertex ordering for correct face rendering.
+            
+            Make sure to take time and think about the best way to implement the requested object.
 
             Avoid any mismatches that would cause GLTF parsers to reject the file.
 
@@ -300,4 +310,4 @@ class CodeAgent:
         return cleaned_response.strip()
             
 code_agent = CodeAgent('./3d_cube.py')
-code_agent.generate_code("Create a Cylinder Defined by circular top and bottom faces with connecting side faces.")
+code_agent.generate_code("Create a Pyramid (Tetrahedron) A simple 3D shape with four triangular faces, four vertices, and six edges.")
