@@ -27,6 +27,11 @@ var server_process_id = -1
 var disconnect = false
 var document_map = {}
 
+var viewport_container: SubViewportContainer
+var viewport: SubViewport
+var model_container: Node3D
+var camera: Camera3D
+
 func _ready():
 	#start python server
 	start_python_server()
@@ -46,6 +51,165 @@ func _ready():
 	connection_timer.wait_time = 15.0
 	connection_timer.timeout.connect(_on_connection_timer_timeout)
 	connection_timer.start()
+	# Setup the 3D viewport system
+	setup_3d_viewport()
+
+# Creates all the necessary nodes for the 3D viewport
+func setup_3d_viewport():
+	# Create SubViewportContainer
+	viewport_container = SubViewportContainer.new()
+	viewport_container.name = "ViewportContainer"
+	viewport_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	viewport_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	viewport_container.stretch = true
+	add_child(viewport_container)
+	
+	# Create SubViewport
+	viewport = SubViewport.new()
+	viewport.name = "Viewport"
+	viewport.size = Vector2i(800, 600)  # Default size, will be resized with container
+	viewport.handle_input_locally = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport.transparent_bg = false
+	viewport_container.add_child(viewport)
+	
+	# Create 3D world container
+	model_container = Node3D.new()
+	model_container.name = "ModelContainer"
+	viewport.add_child(model_container)
+	
+	# Create camera
+	camera = Camera3D.new()
+	camera.name = "Camera3D"
+	camera.position = Vector3(0, 1.5, 4)
+	camera.rotation_degrees = Vector3(-15, 0, 0)
+	viewport.add_child(camera)
+	
+	# Setup initial lighting
+	setup_lighting()
+	
+	# Connect resize signal to update viewport size
+	resized.connect(_on_resized)
+	
+	# Initial size update
+	_on_resized()
+
+# Updates viewport size when container is resized
+func _on_resized():
+	if viewport:
+		viewport.size = get_viewport_rect().size
+
+# Sets up basic lighting for the 3D scene
+func setup_lighting():
+	# Create a directional light
+	var dir_light = DirectionalLight3D.new()
+	dir_light.name = "DirectionalLight"
+	dir_light.rotation_degrees = Vector3(-45, 45, 0)
+	dir_light.light_energy = 1.2
+	dir_light.shadow_enabled = true
+	viewport.add_child(dir_light)
+	
+	# Create ambient lighting via WorldEnvironment
+	var world_env = WorldEnvironment.new()
+	world_env.name = "WorldEnvironment"
+	
+	var env = Environment.new()
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 0.5
+	env.ambient_light_color = Color(0.9, 0.9, 1.0)
+	
+	# Add background and fog
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.3, 0.3, 0.35)
+	
+	world_env.environment = env
+	viewport.add_child(world_env)
+	
+# Function to display 3D models from a file path
+func display_3d_model(model_path: String):
+	print("Loading 3D model from path: ", model_path)
+	
+	# Check if the path is valid
+	if not FileAccess.file_exists(model_path):
+		print("Error: Model file does not exist at path: ", model_path)
+		add_message("System", "Error: Could not find 3D model at specified path", false)
+		return
+	
+	# Ensure the viewport is set up
+	if not is_instance_valid(model_container):
+		setup_3d_viewport()
+	
+	# Clear any existing models in the viewport
+	for child in model_container.get_children():
+		child.queue_free()
+	
+	# Load and instantiate the model
+	var model_resource
+	
+	# Handle different file types
+	if model_path.ends_with(".glb") or model_path.ends_with(".gltf"):
+		# For GLB/GLTF files
+		model_resource = load(model_path)
+		if model_resource == null:
+			print("Failed to load model resource: ", model_path)
+			add_message("System", "Error: Failed to load the 3D model", false)
+			return
+		
+		var model_instance = model_resource.instantiate()
+		if model_instance == null:
+			print("Failed to instantiate model: ", model_path)
+			add_message("System", "Error: Failed to create the 3D model instance", false)
+			return
+			
+		# Add the model to the viewport
+		model_container.add_child(model_instance)
+		
+		# Center the model
+		center_model(model_instance)
+		
+		add_message("System", "3D model loaded successfully: " + model_path.get_file(), false)
+		
+		# Reset camera to view the model properly
+		reset_camera_view()
+	else:
+		print("Unsupported model format: ", model_path)
+		add_message("System", "Error: Unsupported 3D model format", false)
+
+# Helper function to center the model in the viewport
+func center_model(model_instance: Node3D):
+	# Get the model's AABB (Axis-Aligned Bounding Box)
+	var aabb = AABB()
+	
+	# If the model has a MeshInstance3D, use its AABB
+	for child in model_instance.get_children():
+		if child is MeshInstance3D:
+			if aabb.size == Vector3.ZERO:
+				aabb = child.get_aabb()
+			else:
+				aabb = aabb.merge(child.get_aabb())
+	
+	# If we found a valid AABB, center the model
+	if aabb.size != Vector3.ZERO:
+		# Calculate the center offset
+		var center_offset = -aabb.get_center()
+		
+		# Move the model so its center is at the origin
+		model_instance.position = center_offset
+		
+		# Adjust scale if needed (optional)
+		# Determine the largest dimension of the AABB
+		var max_dimension = max(max(aabb.size.x, aabb.size.y), aabb.size.z)
+		if max_dimension > 5:
+			# Scale down large models
+			var scale_factor = 5.0 / max_dimension
+			model_instance.scale = Vector3(scale_factor, scale_factor, scale_factor)
+
+# Helper function to reset the camera position and orientation
+func reset_camera_view():
+	if camera:
+		# Position the camera to get a good view of the model
+		camera.position = Vector3(0, 1.5, 4)
+		camera.rotation_degrees = Vector3(-15, 0, 0)
 
 func _exit():
 	print("Trying to exit process")
@@ -779,9 +943,6 @@ func _handle_websocket_message(message: String):
 		# Handle non-JSON messages
 		add_message("Assistant", message, false)
 		
-func display_3d_model(model_path: String):
-	print("Loading 3D model from path: ", model_path)
-	pass
 
 func _on_send_pressed():
 	if chat_input.text.strip_edges() != "":
