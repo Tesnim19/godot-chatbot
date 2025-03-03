@@ -84,6 +84,35 @@ func setup_3d_viewport():
 	camera.position = Vector3(0, 1.5, 4)
 	camera.rotation_degrees = Vector3(-15, 0, 0)
 	viewport.add_child(camera)
+	
+	# Setup initial lighting
+	setup_lighting()
+
+# Sets up basic lighting for the 3D scene
+func setup_lighting():
+	# Create a directional light
+	var dir_light = DirectionalLight3D.new()
+	dir_light.name = "DirectionalLight"
+	dir_light.rotation_degrees = Vector3(-45, 45, 0)
+	dir_light.light_energy = 1.2
+	dir_light.shadow_enabled = true
+	viewport.add_child(dir_light)
+	
+	# Create ambient lighting via WorldEnvironment
+	var world_env = WorldEnvironment.new()
+	world_env.name = "WorldEnvironment"
+	
+	var env = Environment.new()
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 0.5
+	env.ambient_light_color = Color(0.9, 0.9, 1.0)
+	
+	# Add background and fog
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.3, 0.3, 0.35)
+	
+	world_env.environment = env
+	viewport.add_child(world_env)
 
 func _exit():
 	print("Trying to exit process")
