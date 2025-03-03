@@ -27,6 +27,11 @@ var server_process_id = -1
 var disconnect = false
 var document_map = {}
 
+var viewport_container: SubViewportContainer
+var viewport: SubViewport
+var model_container: Node3D
+var camera: Camera3D
+
 func _ready():
 	#start python server
 	start_python_server()
@@ -46,6 +51,39 @@ func _ready():
 	connection_timer.wait_time = 15.0
 	connection_timer.timeout.connect(_on_connection_timer_timeout)
 	connection_timer.start()
+	# Setup the 3D viewport system
+	setup_3d_viewport()
+
+# Creates all the necessary nodes for the 3D viewport
+func setup_3d_viewport():
+	# Create SubViewportContainer
+	viewport_container = SubViewportContainer.new()
+	viewport_container.name = "ViewportContainer"
+	viewport_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	viewport_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	viewport_container.stretch = true
+	add_child(viewport_container)
+	
+	# Create SubViewport
+	viewport = SubViewport.new()
+	viewport.name = "Viewport"
+	viewport.size = Vector2i(800, 600)  # Default size, will be resized with container
+	viewport.handle_input_locally = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport.transparent_bg = false
+	viewport_container.add_child(viewport)
+	
+	# Create 3D world container
+	model_container = Node3D.new()
+	model_container.name = "ModelContainer"
+	viewport.add_child(model_container)
+	
+	# Create camera
+	camera = Camera3D.new()
+	camera.name = "Camera3D"
+	camera.position = Vector3(0, 1.5, 4)
+	camera.rotation_degrees = Vector3(-15, 0, 0)
+	viewport.add_child(camera)
 
 func _exit():
 	print("Trying to exit process")
