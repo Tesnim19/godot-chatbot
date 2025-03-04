@@ -778,10 +778,6 @@ func _handle_websocket_message(message: String):
 	else:
 		# Handle non-JSON messages
 		add_message("Assistant", message, false)
-		
-func display_3d_model(model_path: String):
-	print("Loading 3D model from path: ", model_path)
-	pass
 
 func _on_send_pressed():
 	if chat_input.text.strip_edges() != "":
