@@ -374,3 +374,52 @@ func clear_messages():
 	for child in message_container.get_children():
 			child.queue_free()
 
+func _on_toggle_chat():
+	is_chat_open = !is_chat_open
+	if is_chat_open:
+			chat_panel.show()
+			toggle_button.hide()
+	else:
+			chat_panel.hide()
+			toggle_button.show()
+	emit_signal("toggle_chat", is_chat_open)
+
+func _on_send_pressed():
+	if chat_input.text.strip_edges() != "":
+			emit_signal("message_sent", chat_input.text)
+			chat_input.text = ""
+
+func _on_message_sent(text: String):
+	emit_signal("message_sent", text)
+	chat_input.text = ""
+
+func _on_upload_pressed():
+	emit_signal("upload_pressed")
+
+func _on_reconnect_pressed():
+	emit_signal("reconnect_pressed")
+
+func _on_tooltip_pressed():
+	emit_signal("tooltip_pressed")
+
+func _on_fetch_documents_pressed():
+	emit_signal("fetch_documents_pressed")
+
+func _on_reference_clicked(ref: Dictionary):
+	OS.shell_open(ref["path"])
+
+func initialize_models():
+	var popup = model_selection_button.get_popup()
+	popup.clear()
+	
+	var models = ["gemini", "t5-base"]
+	for i in range(models.size()):
+			popup.add_item(models[i], i)
+	
+	if not popup.id_pressed.is_connected(_on_model_selected):
+			popup.id_pressed.connect(_on_model_selected)
+
+func _on_model_selected(id: int):
+	var popup = model_selection_button.get_popup()
+	var model_name = popup.get_item_text(id)
+	emit_signal("model_selected", model_name)
