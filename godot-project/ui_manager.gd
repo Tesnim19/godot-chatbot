@@ -18,18 +18,22 @@ var chat_header_indicator: ColorRect
 var toggle_button: Button
 var is_chat_open = false
 
+# Signals
 signal message_sent(text: String)
 signal upload_pressed
 signal reconnect_pressed
 signal tooltip_pressed
 signal model_selected(model_name: String)
+signal fetch_documents_pressed
+signal toggle_chat(is_open: bool)
 
 func setup_ui(parent_node: Control):
-    setup_toggle_button(parent_node)
-    setup_connection_indicator()
-    setup_chat_panel()
-    setup_chat_interface()
-    chat_panel.hide()
+	parent_node.anchor_right = 0.98
+	parent_node.anchor_bottom = 0.96  
+	setup_toggle_button()
+	setup_connection_indicator()
+	setup_chat_panel()
+	chat_panel.hide()
 
 func setup_toggle_button():
 	toggle_button = Button.new()
@@ -53,12 +57,10 @@ func setup_toggle_button():
 	add_child(toggle_button)
 
 func setup_connection_indicator():
-	# Create the indicator in the top-right corner of the toggle button
 	connection_indicator = ColorRect.new()
 	connection_indicator.size = Vector2(12, 12)
 	connection_indicator.color = Color(0.8, 0.2, 0.2)  # Red by default
 	
-	# Create a circle shape using a StyleBoxFlat
 	var circle_style = StyleBoxFlat.new()
 	circle_style.bg_color = Color(0.8, 0.2, 0.2)
 	circle_style.corner_radius_top_left = 16
@@ -66,19 +68,14 @@ func setup_connection_indicator():
 	circle_style.corner_radius_bottom_left = 16
 	circle_style.corner_radius_bottom_right = 16
 	
-	# Apply the style
 	connection_indicator.add_theme_stylebox_override("panel", circle_style)
-	
-	# Position it on the toggle button
 	connection_indicator.position = Vector2(-6, -6)
 	toggle_button.add_child(connection_indicator)
 	
-	# Also add an indicator in the chat panel header
 	chat_header_indicator = ColorRect.new()
 	chat_header_indicator.size = Vector2(12, 12)
 	chat_header_indicator.custom_minimum_size = Vector2(12, 12)
 	
-	# Create and apply the same style
 	var header_circle_style = StyleBoxFlat.new()
 	header_circle_style.bg_color = Color(0.8, 0.2, 0.2)
 	header_circle_style.corner_radius_top_left = 6
@@ -103,7 +100,6 @@ func setup_chat_panel():
 	add_child(chat_panel)
 
 func setup_chat_interface():
-	# Create margin container for padding
 	var margin_container = MarginContainer.new()
 	margin_container.add_theme_constant_override("margin_left", 20)
 	margin_container.add_theme_constant_override("margin_right", 20)
@@ -111,16 +107,18 @@ func setup_chat_interface():
 	margin_container.add_theme_constant_override("margin_bottom", 20)
 	chat_panel.add_child(margin_container)
 	
-	# Main chat container
 	chat_container = VBoxContainer.new()
 	chat_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin_container.add_child(chat_container)
 	
-	# Header with title and close button
+	setup_header()
+	setup_input_section()
+	setup_message_area()
+
+func setup_header():
 	var header = HBoxContainer.new()
 	chat_container.add_child(header)
 	
-	# Create a sub-container for the title and indicator to keep them together
 	var title_container = HBoxContainer.new()
 	title_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title_container)
@@ -132,57 +130,9 @@ func setup_chat_interface():
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_container.add_child(title)
 	
-	# Model Selection Dropdown
-	model_selection_button = MenuButton.new()
-	model_selection_button.text = "Models"
-	model_selection_button.custom_minimum_size = Vector2(100, 0)
-	
-	# Style the model selection button
-	var model_button_style = StyleBoxFlat.new()
-	model_button_style.bg_color = Color(0.3, 0.6, 0.9)  # Light blue
-	model_button_style.corner_radius_top_left = 6
-	model_button_style.corner_radius_top_right = 6
-	model_button_style.corner_radius_bottom_left = 6
-	model_button_style.corner_radius_bottom_right = 6
-	model_selection_button.add_theme_stylebox_override("normal", model_button_style)
-	header.add_child(model_selection_button)
-	
-	# Connect button press event - Fixed: Changed to proper function call
-	model_selection_button.pressed.connect(self._initialize_models)
-
-	# Button for displaying tooltip
-	tooltip_button = Button.new()
-	
-	var tool_tip_icon = Image.new()
-	tool_tip_icon.load("res://bubble.png")
-	tool_tip_icon.resize(30, 30, Image.INTERPOLATE_BILINEAR)
-	
-	var texture = ImageTexture.create_from_image(tool_tip_icon)
-
-	tooltip_button.icon = texture
-	tooltip_button.text = ""
-	header.add_child(tooltip_button)
-	
-	tooltip_button.pressed.connect(_on_tooltip_pressed)
-	
-	#Button for displaying documents
-	fetch_documents_button = MenuButton.new()
-	fetch_documents_button.text = "Documents"
-	fetch_documents_button.custom_minimum_size = Vector2(100, 0)  # Give it some minimum width
-	var popup = fetch_documents_button.get_popup()
-	fetch_documents_button.pressed.connect(_on_fetch_documents_pressed)
-	
-	# Style the documents button
-	var docs_button_style = StyleBoxFlat.new()
-	docs_button_style.bg_color = Color(0.2, 0.4, 0.8)  # Match your color scheme
-	docs_button_style.corner_radius_top_left = 6
-	docs_button_style.corner_radius_top_right = 6
-	docs_button_style.corner_radius_bottom_left = 6
-	docs_button_style.corner_radius_bottom_right = 6
-
-	fetch_documents_button.add_theme_stylebox_override("normal", docs_button_style)
-
-	header.add_child(fetch_documents_button)
+	setup_model_selection(header)
+	setup_tooltip_button(header)
+	setup_documents_button(header)
 	
 	var close_button = Button.new()
 	close_button.text = "×"
@@ -190,125 +140,163 @@ func setup_chat_interface():
 	close_button.add_theme_font_size_override("font_size", 24)
 	close_button.pressed.connect(_on_toggle_chat)
 	header.add_child(close_button)
+
+func setup_model_selection(header: HBoxContainer):
+	model_selection_button = MenuButton.new()
+	model_selection_button.text = "Models"
+	model_selection_button.custom_minimum_size = Vector2(100, 0)
 	
-	# Input container with upload and chat input
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.3, 0.6, 0.9)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	model_selection_button.add_theme_stylebox_override("normal", style)
+	
+	header.add_child(model_selection_button)
+
+func setup_tooltip_button(header: HBoxContainer):
+	tooltip_button = Button.new()
+	
+	var icon = Image.new()
+	icon.load("res://bubble.png")
+	icon.resize(30, 30, Image.INTERPOLATE_BILINEAR)
+	var texture = ImageTexture.create_from_image(icon)
+	
+	tooltip_button.icon = texture
+	tooltip_button.text = ""
+	tooltip_button.pressed.connect(_on_tooltip_pressed)
+	header.add_child(tooltip_button)
+
+func setup_documents_button(header: HBoxContainer):
+	fetch_documents_button = MenuButton.new()
+	fetch_documents_button.text = "Documents"
+	fetch_documents_button.custom_minimum_size = Vector2(100, 0)
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.2, 0.4, 0.8)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	fetch_documents_button.add_theme_stylebox_override("normal", style)
+	
+	fetch_documents_button.pressed.connect(_on_fetch_documents_pressed)
+	header.add_child(fetch_documents_button)
+
+func setup_input_section():
 	var input_container = HBoxContainer.new()
 	input_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chat_container.add_child(input_container)
 	
-	# Upload button
+	setup_upload_button(input_container)
+	setup_reconnect_button(input_container)
+	setup_chat_input(input_container)
+	setup_send_button(input_container)
+
+func setup_upload_button(container: HBoxContainer):
 	upload_button = Button.new()
 	upload_button.text = "Upload PDF"
 	upload_button.custom_minimum_size = Vector2(110, 42)
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.2, 0.4, 0.8)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	upload_button.add_theme_stylebox_override("normal", style)
+	
 	upload_button.pressed.connect(_on_upload_pressed)
+	container.add_child(upload_button)
 
-	#Reconnect button
+func setup_reconnect_button(container: HBoxContainer):
 	reconnect_button = Button.new()
 	reconnect_button.text = "Disconnect"
 	reconnect_button.custom_minimum_size = Vector2(110, 42)
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.8, 0.1, 0.1)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	reconnect_button.add_theme_stylebox_override("normal", style)
+	
 	reconnect_button.pressed.connect(_on_reconnect_pressed)
+	container.add_child(reconnect_button)
 
-	var upload_button_style = StyleBoxFlat.new()
-	upload_button_style.bg_color = Color(0.2, 0.4, 0.8) # Blue color
-	upload_button_style.corner_radius_top_left = 6
-	upload_button_style.corner_radius_top_right = 6
-	upload_button_style.corner_radius_bottom_left = 6
-	upload_button_style.corner_radius_bottom_right = 6
-
-	upload_button.add_theme_stylebox_override("normal", upload_button_style)
-	input_container.add_child(upload_button)
-
-	var reconnect_button_style = StyleBoxFlat.new()
-	reconnect_button_style.bg_color = Color(0.8, 0.1, 0.1) # Red color
-	reconnect_button_style.corner_radius_top_left = 6
-	reconnect_button_style.corner_radius_top_right = 6
-	reconnect_button_style.corner_radius_bottom_left = 6
-	reconnect_button_style.corner_radius_bottom_right = 6
-
-	reconnect_button.add_theme_stylebox_override("normal", reconnect_button_style)
-	input_container.add_child(reconnect_button)
-
+func setup_chat_input(container: HBoxContainer):
+	var spacer = Control.new()
+	spacer.custom_minimum_size.x = 12
+	container.add_child(spacer)
 	
-	# Spacing between buttons
-	var button_spacer = Control.new()
-	button_spacer.custom_minimum_size.x = 12
-	input_container.add_child(button_spacer)
-	
-	# Chat input field
 	chat_input = LineEdit.new()
 	chat_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chat_input.placeholder_text = "Type your message..."
 	chat_input.custom_minimum_size.y = 36
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.22, 0.22, 0.25)
+	style.border_color = Color(0.3, 0.3, 0.35)
+	style.border_width_left = 1
+	style.border_width_right = 1
+	style.border_width_top = 1
+	style.border_width_bottom = 1
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	chat_input.add_theme_stylebox_override("normal", style)
+	
 	chat_input.text_submitted.connect(_on_message_sent)
+	container.add_child(chat_input)
 	
-	var input_style = StyleBoxFlat.new()
-	input_style.bg_color = Color(0.22, 0.22, 0.25)
-	input_style.border_color = Color(0.3, 0.3, 0.35)
-	input_style.border_width_left = 1
-	input_style.border_width_right = 1
-	input_style.border_width_top = 1
-	input_style.border_width_bottom = 1
-	input_style.corner_radius_top_left = 6
-	input_style.corner_radius_top_right = 6
-	input_style.corner_radius_bottom_left = 6
-	input_style.corner_radius_bottom_right = 6
-	
-	chat_input.add_theme_stylebox_override("normal", input_style)
-	input_container.add_child(chat_input)
-	
-	# Spacing between input and send button
-	var input_spacer = Control.new()
-	input_spacer.custom_minimum_size.x = 12
-	input_container.add_child(input_spacer)
-	
-	# Send button
+	spacer = Control.new()
+	spacer.custom_minimum_size.x = 12
+	container.add_child(spacer)
+
+func setup_send_button(container: HBoxContainer):
 	send_button = Button.new()
 	send_button.text = "Send"
 	send_button.custom_minimum_size = Vector2(85, 42)
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.2, 0.7, 0.4)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	send_button.add_theme_stylebox_override("normal", style)
+	
 	send_button.pressed.connect(_on_send_pressed)
+	container.add_child(send_button)
+
+func setup_message_area():
+	var spacer = Control.new()
+	spacer.custom_minimum_size.y = 15
+	chat_container.add_child(spacer)
 	
-	var send_button_style = StyleBoxFlat.new()
-	send_button_style.bg_color = Color(0.2, 0.7, 0.4)
-	send_button_style.corner_radius_top_left = 6
-	send_button_style.corner_radius_top_right = 6
-	send_button_style.corner_radius_bottom_left = 6
-	send_button_style.corner_radius_bottom_right = 6
-	
-	send_button.add_theme_stylebox_override("normal", send_button_style)
-	input_container.add_child(send_button)
-	
-	# Spacing after input section
-	var input_section_spacer = Control.new()
-	input_section_spacer.custom_minimum_size.y = 15
-	chat_container.add_child(input_section_spacer)
-	
-	# Chat output area
 	var output_container = PanelContainer.new()
 	output_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	output_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	output_container.custom_minimum_size.y = 300
 	
-	var output_style = StyleBoxFlat.new()
-	output_style.bg_color = Color(0.18, 0.18, 0.2)
-	output_style.corner_radius_top_left = 8
-	output_style.corner_radius_top_right = 8
-	output_style.corner_radius_bottom_left = 8
-	output_style.corner_radius_bottom_right = 8
-	output_container.add_theme_stylebox_override("panel", output_style)
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.18, 0.18, 0.2)
+	style.corner_radius_top_left = 8
+	style.corner_radius_top_right = 8
+	style.corner_radius_bottom_left = 8
+	style.corner_radius_bottom_right = 8
+	output_container.add_theme_stylebox_override("panel", style)
 	
 	chat_container.add_child(output_container)
 	
-	# Scroll container for messages
 	scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	
-	
-	# Message container
-	message_container = VBoxContainer.new()
-	message_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	#message_container.custom_minimum_size = Vector2(200, 0)
-	message_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	output_container.add_child(scroll_container)
 	
 	var message_margin = MarginContainer.new()
 	message_margin.add_theme_constant_override("margin_left", 12)
@@ -316,7 +304,73 @@ func setup_chat_interface():
 	message_margin.add_theme_constant_override("margin_top", 12)
 	message_margin.add_theme_constant_override("margin_bottom", 12)
 	message_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	
-	message_margin.add_child(message_container)
 	scroll_container.add_child(message_margin)
-	output_container.add_child(scroll_container)
+	
+	message_container = VBoxContainer.new()
+	message_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	message_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	message_margin.add_child(message_container)
+
+func update_connection_indicator(is_connected: bool):
+	var color = Color(0.2, 0.8, 0.2) if is_connected else Color(0.8, 0.2, 0.2)
+	
+	if connection_indicator:
+			connection_indicator.color = color
+			var style = connection_indicator.get_theme_stylebox("panel")
+			if style:
+					style.bg_color = color
+	
+	if chat_header_indicator:
+			chat_header_indicator.color = color
+			var style = chat_header_indicator.get_theme_stylebox("panel")
+			if style:
+					style.bg_color = color
+
+func add_message(sender: String, text: String, is_user: bool = false, metadata = null):
+	var message_row = HBoxContainer.new()
+	message_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	var message_bubble = PanelContainer.new()
+	message_bubble.size_flags_horizontal = Control.SIZE_SHRINK_END if is_user else Control.SIZE_SHRINK_BEGIN
+	
+	var bubble_style = StyleBoxFlat.new()
+	bubble_style.bg_color = Color(0.2, 0.7, 0.4) if is_user else Color(0.25, 0.25, 0.3)
+	bubble_style.corner_radius_top_left = 15
+	bubble_style.corner_radius_top_right = 15
+	bubble_style.corner_radius_bottom_left = 15
+	bubble_style.corner_radius_bottom_right = 15
+	message_bubble.add_theme_stylebox_override("panel", bubble_style)
+	
+	var content = VBoxContainer.new()
+	content.add_theme_constant_override("separation", 4)
+	
+	var sender_label = Label.new()
+	sender_label.text = sender
+	sender_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	content.add_child(sender_label)
+	
+	var message_label = RichTextLabel.new()
+	message_label.text = text
+	message_label.fit_content = true
+	message_label.custom_minimum_size.x = 100
+	message_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_child(message_label)
+	
+	if metadata and metadata.has("references"):
+			for ref in metadata["references"]:
+					var ref_button = Button.new()
+					ref_button.text = ref["title"]
+					ref_button.pressed.connect(_on_reference_clicked.bind(ref))
+					content.add_child(ref_button)
+	
+	message_bubble.add_child(content)
+	message_row.add_child(message_bubble)
+	message_container.add_child(message_row)
+	
+	await get_tree().process_frame
+	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
+
+func clear_messages():
+	for child in message_container.get_children():
+			child.queue_free()
+
