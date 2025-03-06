@@ -19,7 +19,8 @@ class AIAgent:
         os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
         self.model_type = model_type
         self.document = None
-        self.chroma_path = './chroma'
+        self.project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..")) 
+        self.chroma_path = f'{self.project_path}/server/chroma'
         self.db = None
         self.retriver = None
         #self.langchain_embeddings = HuggingFaceEmbeddings(model_name="distilbert-base-nli-stsb-mean-tokens")
@@ -40,22 +41,6 @@ class AIAgent:
                        )
         else:
             self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
-
-    # def load_document(self, path):
-        # document_loader = PyPDFDirectoryLoader(path)
-        # loaded_documents = document_loader.load()  # List of Document objects
-        # 
-        # if not loaded_documents or len(loaded_documents) == 0:
-        #     return 
-# 
-        # self.document = [
-        #     langchain_core.documents.base.Document(
-        #         page_content=clean_text(doc.page_content), 
-        #         metadata=doc.metadata
-        #     )
-        #     for doc in loaded_documents
-        # ]
-        # self.split_text()
 
     def load_single_document(self, path):
         document_loader = PyPDFLoader(path)
@@ -91,15 +76,11 @@ class AIAgent:
         self.retriver = self.db.as_retriever()
         print(f"Saved {len(self.document)} chunks to {self.chroma_path}.")
 
-    def retrive_documents(self, question, collection_name, persistant=True):
-        if persistant:
-            db = Chroma(collection_name=collection_name, 
+    def retrive_documents(self, question, collection_name):
+        db = Chroma(collection_name=collection_name, 
                     embedding_function=self.langchain_embeddings,
                     persist_directory=self.chroma_path)
-        else:
-            # for now store the 3d objects in memory
-            db = Chroma(collection_name=collection_name, 
-                    embedding_function=self.langchain_embeddings)
+
         self.retriver = db.as_retriever()
         # Retrieve the most relevant documents
         results = self.retriver.get_relevant_documents(question)

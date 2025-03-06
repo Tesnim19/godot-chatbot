@@ -50,7 +50,7 @@ async def upload_pdf(file: UploadFile, response: Response):
         with open(f'{project_path}/server/public/{file.filename}', "wb") as f:
             f.write(contents)
         
-        agent.load_single_document(f'./public/{file.filename}')
+        agent.load_single_document(f'{project_path}/server/public/{file.filename}')
         return {"message": "File uploaded successfully"}
     except Exception as e:
         os.remove(f"{project_path}/server/public/{file.filename}")
@@ -98,7 +98,7 @@ async def delete_document(request: DocumentDeleteRequest, response: Response):
     try:
         os.remove(f"{project_path}/server/public/{document_name}")
         response.status_code = 200
-        agent.delete_from_chroma(f'./public/{document_name}')
+        agent.delete_from_chroma(f'{project_path}/server/public/{document_name}')
         return {"message": "Document deleted successfully"}
     except Exception as e:
         logging.info(f"Error deleting a file {e}")
