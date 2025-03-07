@@ -19,7 +19,8 @@ class AIAgent:
         os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
         self.model_type = model_type
         self.document = None
-        self.chroma_path = './chroma'
+        self.project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..")) 
+        self.chroma_path = f'{self.project_path}/server/chroma'
         self.db = None
         self.retriver = None
         #self.langchain_embeddings = HuggingFaceEmbeddings(model_name="distilbert-base-nli-stsb-mean-tokens")
@@ -40,22 +41,6 @@ class AIAgent:
                        )
         else:
             self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
-
-    # def load_document(self, path):
-        # document_loader = PyPDFDirectoryLoader(path)
-        # loaded_documents = document_loader.load()  # List of Document objects
-        # 
-        # if not loaded_documents or len(loaded_documents) == 0:
-        #     return 
-# 
-        # self.document = [
-        #     langchain_core.documents.base.Document(
-        #         page_content=clean_text(doc.page_content), 
-        #         metadata=doc.metadata
-        #     )
-        #     for doc in loaded_documents
-        # ]
-        # self.split_text()
 
     def load_single_document(self, path):
         document_loader = PyPDFLoader(path)
@@ -91,15 +76,11 @@ class AIAgent:
         self.retriver = self.db.as_retriever()
         print(f"Saved {len(self.document)} chunks to {self.chroma_path}.")
 
-    def retrive_documents(self, question, collection_name, persistant=True):
-        if persistant:
-            db = Chroma(collection_name=collection_name, 
+    def retrive_documents(self, question, collection_name):
+        db = Chroma(collection_name=collection_name, 
                     embedding_function=self.langchain_embeddings,
                     persist_directory=self.chroma_path)
-        else:
-            # for now store the 3d objects in memory
-            db = Chroma(collection_name=collection_name, 
-                    embedding_function=self.langchain_embeddings)
+
         self.retriver = db.as_retriever()
         # Retrieve the most relevant documents
         results = self.retriver.get_relevant_documents(question)
@@ -112,72 +93,6 @@ class AIAgent:
             return results
         
         return []
-
-    def load_3d_models(self):
-        json_path = './public/models/model_description.json'
-
-        # Check if the file exists
-        if not os.path.exists(json_path):
-            return
-
-        # Check if the file is empty
-        if os.path.getsize(json_path) == 0:
-            return
-
-        # Load JSON data
-        with open(json_path, 'r') as f:
-            try:
-                model_description = json.load(f)
-            except json.JSONDecodeError:
-                return
-
-        # Check if the JSON is an empty array
-        if not model_description or not isinstance(model_description, list):
-            return
-
-        # Process valid data
-        document_ids = [model["path"] for model in model_description]  # Use the path as the ID
-        documents = [
-            Document(page_content=model["description"], metadata={"path": model["path"]})
-            for model in model_description
-        ]
-
-        self.db = Chroma.from_documents(documents, 
-                                        self.langchain_embeddings, 
-                                        ids=document_ids, 
-                                        collection_name='3d_object_descriptions')
-
-        self.retriver = self.db.as_retriever()
-
-        print(f"Saved {len(documents)} chunks to {self.chroma_path}. Models")
-
-    def decide_action(self, question):
-        if self.model_type != 'gemini':
-            raise Exception("This method is only available for the Gemini model.")
-        
-        prompt = f"""You are an intelligent decision-making agent. Based on the input, determine whether to answer a question or generate a 3D model. 
-
-        If the input suggests generating a 3D model, return 'generate'.  
-        Otherwise, return 'answer'. Question: {question}"""
-        
-        decision = self.model.invoke(prompt)
-        decision = decision.content
-        
-        return decision
-        
-    def generate_object(self, question):
-        results = self.retrive_documents(question, '3d_object_descriptions', False)
-        
-        # select the top result
-        if not results:
-            return "No relevant documents found."
-        
-        document = results[0]
-        path = document.metadata.get('path')
-        
-        response = {'type': 'generate', 'response': path}
-
-        return response
 
     def answer_question(self, question):
         results = self.retrive_documents(question, 'documents')
@@ -230,12 +145,7 @@ class AIAgent:
 
         return final_response
     def generate_answer(self, question):
-        decision = self.decide_action(question)
-        
-        if decision == 'generate':
-            return self.generate_object(question)
-        else:
-            return self.answer_question(question)
+        return self.answer_question(question)
 
     def delete_from_chroma(self, source):
         try:
@@ -253,7 +163,3 @@ class AIAgent:
             db.delete(ids_to_delete)
         except Exception as e:
             raise Exception(f"Error deleting from Chroma: {str(e)}")
-#agent = AIAgent()
-#agent.load_document('./public')
-#answer = agent.generate_answer('What type of encoder feedback does the motor support?')  # Example question
-#print(answer)
