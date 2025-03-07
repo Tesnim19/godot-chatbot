@@ -76,12 +76,20 @@ class AIAgent:
         self.retriver = self.db.as_retriever()
         print(f"Saved {len(self.document)} chunks to {self.chroma_path}.")
 
-    def retrive_documents(self, question, collection_name):
+    def retrive_documents(self, question, collection_name, pdf_name=None):
         db = Chroma(collection_name=collection_name, 
                     embedding_function=self.langchain_embeddings,
                     persist_directory=self.chroma_path)
-
-        self.retriver = db.as_retriever()
+        
+        if pdf_name:
+            collection_path = self.project_path + '/server/public/' + pdf_name
+        else:
+            collection_path = None
+        
+        if collection_path:
+            self.retriver = db.as_retriever(search_kwargs={"filter": {"source": collection_path}})
+        else:
+            self.retriver = db.as_retriever()
         # Retrieve the most relevant documents
         results = self.retriver.get_relevant_documents(question)
 
@@ -94,8 +102,8 @@ class AIAgent:
         
         return []
 
-    def answer_question(self, question):
-        results = self.retrive_documents(question, 'documents')
+    def answer_question(self, question, pdf_name=None):
+        results = self.retrive_documents(question, 'documents', pdf_name)
         if not results:
             response = {
                 'answer': 'Sorry, I could not find any relevant documents for your question.',
@@ -144,8 +152,8 @@ class AIAgent:
         final_response = {'type': 'answer', 'response': response}
 
         return final_response
-    def generate_answer(self, question):
-        return self.answer_question(question)
+    def generate_answer(self, question, pdf_name=None):
+        return self.answer_question(question, pdf_name)
 
     def delete_from_chroma(self, source):
         try:
