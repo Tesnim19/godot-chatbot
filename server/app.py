@@ -30,8 +30,10 @@ async def websocket_endpoint(websocket: WebSocket):
             if message_data.get("type") == "chat":
                 # Get the actual message content
                 query = message_data.get("content")
+                # Get the specfied collection name
+                pdf_name = message_data.get("pdf_name", None)
                 # Use the instance of AIAgent
-                response = agent.generate_answer(query)
+                response = agent.generate_answer(query, pdf_name)
                 # Send the response back to the client
                 await manager.send(json.dumps(response))
     except WebSocketDisconnect:
