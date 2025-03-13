@@ -56,17 +56,19 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     print('connected')
     
-    # check if the api key is empty or set to not-set
-    if os.environ.get("GOOGLE_API_KEY") == None or os.environ.get("GOOGLE_API_KEY") == "not-set":
-         await manager.send(json.dumps({'status': 'Failure', "message": "API key not set"}))
-    
     GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+
     try:
-        is_valid = validate_api_key(GOOGLE_API_KEY)
-        if is_valid:
-            await manager.send(json.dumps({"status": "Failure", "message": "API key is valid"}))
-        else:
-            await manager.send(json.dumps({"status": "Success", "message": "API key is invalid"}))
+            # check if the api key is empty or set to not-set
+        if GOOGLE_API_KEY == None or GOOGLE_API_KEY == "not-set":
+            await manager.send(json.dumps({'status': 'Failure', "message": "API key not set"}))
+        else: 
+            is_valid = validate_api_key(GOOGLE_API_KEY)
+
+            if is_valid:
+                await manager.send(json.dumps({"status": "Success", "message": "API key is valid"}))
+            else:
+                await manager.send(json.dumps({"status": "Failure", "message": "API key is invalid"}))
         while True:
             data = await websocket.receive_text()
             # Parse the incoming message as JSON
