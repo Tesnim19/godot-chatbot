@@ -1,6 +1,6 @@
 from langchain_community.document_loaders.pdf import PyPDFDirectoryLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores.chroma import Chroma
 import langchain_core
 import shutil
 import os

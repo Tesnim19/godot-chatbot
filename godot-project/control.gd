@@ -57,42 +57,28 @@ func _exit():
 
 func start_python_server():
 	var project_dir = ProjectSettings.globalize_path("res://")
-	var server_dir = project_dir + "../server/"
-	var server_file = server_dir + "app.py"
-
-	if not FileAccess.file_exists(server_file):
+	var server_dir = ''
+	if OS.has_feature("windows"):
+		server_dir = project_dir + "../server/dist/windows/main/main.exe"
+	elif OS.has_feature("linux"):
+		server_dir = project_dir + "../server/dist/linux/main/main"
+	elif OS.has_feature("macos"):
+		server_dir = project_dir + "../server/dist/mac/main/main"
+	# var server_file = server_dir + "app.py"
+	if not FileAccess.file_exists(server_dir):
 		print("Server file doesn't exist")
 		return
-
-	var venv_dir = server_dir + ".venv"
-	var args_create_venv = ["-m", "venv", venv_dir]
-	var command_create_venv = "python"
-
-	if OS.get_name() == "Windows":
-		args_create_venv = ["-m", "venv", venv_dir.replace("/", "\\")]
-		if OS.has_feature("standalone"):
-			if OS.execute("py", ["--version"]) == 0:
-				command_create_venv = "py"
-			else:
-				command_create_venv = "python"
-	var output_create_venv = []
-	var execute_code_create_venv = OS.execute(command_create_venv, args_create_venv, output_create_venv, true)
-
-	print(execute_code_create_venv)
-	print("Output creating venv: \n", "\n".join(output_create_venv))
+		
+	print(server_dir)
 
 	_execute_server_startup_command(server_dir)
 
 func _execute_server_startup_command(server_dir):
-	var args_fastapi = ["run", server_dir + "app.py"]
-	var command_fastapi = ""
+	var args = []
+	var command = server_dir
+	print(args)
 
-	if OS.get_name() == "Windows":
-		command_fastapi = server_dir.replace("/", "\\") + ".venv\\Scripts\\fastapi"
-	else:
-		command_fastapi = server_dir + ".venv/bin/fastapi"
-
-	server_process_id = OS.create_process(command_fastapi, args_fastapi)
+	server_process_id = OS.create_process(command, args)
 	print("server id: ", server_process_id)
 	
 func setup_ui():
@@ -228,7 +214,13 @@ func _on_popup_item_selected(id):
 		_on_delete_document_pressed(filename)
 	else:  # Open action
 		var project_dir = ProjectSettings.globalize_path("res://")
-		var file_dir = project_dir + "../server/public/" + filename
+		var file_dir = ''
+		if OS.has_feature("linux"):
+			file_dir = project_dir + "../server/dist/linux/main/_internal/server/public/" + filename
+		elif OS.has_feature("windows"):
+			file_dir = project_dir + "../server/dist/windows/main/_internal/server/public/" + filename
+		elif OS.has_feature("macos"):
+			file_dir = project_dir + "../server/dist/mac/main/_internal/server/public/" + filename
 		_on_reference_clicked({'path': file_dir, 'page': 1})
 		print("Opening: " + filename)
 
@@ -692,6 +684,9 @@ func _process(_delta):
 			WebSocketPeer.STATE_OPEN:
 				if !connection_status:
 					print("Connected to server!")
+					var packet_ty = websocket.get_packet()
+					var message_ty = packet_ty.get_string_from_utf8()
+					print(message_ty)
 					connection_status = true
 					add_message("System", "Connected to server!", false)
 					_update_connection_indicator(true)
@@ -751,7 +746,7 @@ func _handle_websocket_message(message: String):
 						if data.has("response") and data.response is String:
 							var model_path = data.response
 							# Call your function to display the 3D model
-							display_3d_model(model_path)
+							#display_3d_model(model_path)
 							add_message("System", "Generated 3D model: " + model_path.get_file(), false)
 						else:
 							print("Malformed generate message format")
@@ -917,7 +912,12 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		for ref in metadata:
 			var pdf_name = ref["document_path"].get_file()  # Extract file name from path
 			var project_dir = ProjectSettings.globalize_path("res://")
-			ref.document_path = project_dir + "../server/public/" + pdf_name
+			if OS.has_feature("linux"):
+				ref.document_path = project_dir + "../server/dist/linux/main/_internal/server/public/" + pdf_name
+			elif OS.has_feature("windows"):
+				ref.document_path = project_dir + "../server/dist/windows/main/_internal/server/public/" + pdf_name
+			elif OS.has_feature("macos"):
+				ref.document_path = project_dir + "../server/dist/windows/main/_internal/server/public/" + pdf_name
 			var ref_button = Button.new()
 			ref_button.text = "• %s (Page %d)" % [pdf_name, ref["page_number"]]
 			ref_button.flat = true
