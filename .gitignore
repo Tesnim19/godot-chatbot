@@ -5,3 +5,4 @@ public/
 pdf_server.log
 godot-project/pdfs
 server/chroma
+server/config/

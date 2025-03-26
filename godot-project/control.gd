@@ -58,10 +58,12 @@ func _exit():
 func start_python_server():
 	var project_dir = ProjectSettings.globalize_path("res://")
 	var server_dir = ''
-	if OS.get_name() == "Windows":
-		server_dir = project_dir + "../server/dist/main/main.exe"
-	else:
-		server_dir = project_dir + "../server/dist/main/main"
+	if OS.has_feature("windows"):
+		server_dir = project_dir + "../server/dist/windows/main/main.exe"
+	elif OS.has_feature("linux"):
+		server_dir = project_dir + "../server/dist/linux/main/main"
+	elif OS.has_feature("macos"):
+		server_dir = project_dir + "../server/dist/mac/main/main"
 	# var server_file = server_dir + "app.py"
 	if not FileAccess.file_exists(server_dir):
 		print("Server file doesn't exist")
@@ -212,7 +214,13 @@ func _on_popup_item_selected(id):
 		_on_delete_document_pressed(filename)
 	else:  # Open action
 		var project_dir = ProjectSettings.globalize_path("res://")
-		var file_dir = project_dir + "../server/dist/main/_internal/server/public/" + filename
+		var file_dir = ''
+		if OS.has_feature("linux"):
+			file_dir = project_dir + "../server/dist/linux/main/_internal/server/public/" + filename
+		elif OS.has_feature("windows"):
+			file_dir = project_dir + "../server/dist/windows/main/_internal/server/public/" + filename
+		elif OS.has_feature("macos"):
+			file_dir = project_dir + "../server/dist/mac/main/_internal/server/public/" + filename
 		_on_reference_clicked({'path': file_dir, 'page': 1})
 		print("Opening: " + filename)
 
@@ -904,7 +912,12 @@ func add_message(sender: String, text: String, is_user: bool = false, metadata =
 		for ref in metadata:
 			var pdf_name = ref["document_path"].get_file()  # Extract file name from path
 			var project_dir = ProjectSettings.globalize_path("res://")
-			ref.document_path = project_dir + "../server/dist/main/_internal/server/public/" + pdf_name
+			if OS.has_feature("linux"):
+				ref.document_path = project_dir + "../server/dist/linux/main/_internal/server/public/" + pdf_name
+			elif OS.has_feature("windows"):
+				ref.document_path = project_dir + "../server/dist/windows/main/_internal/server/public/" + pdf_name
+			elif OS.has_feature("macos"):
+				ref.document_path = project_dir + "../server/dist/windows/main/_internal/server/public/" + pdf_name
 			var ref_button = Button.new()
 			ref_button.text = "• %s (Page %d)" % [pdf_name, ref["page_number"]]
 			ref_button.flat = true
