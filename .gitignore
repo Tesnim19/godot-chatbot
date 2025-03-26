@@ -6,3 +6,6 @@ pdf_server.log
 godot-project/pdfs
 server/chroma
 server/config/
+server/build
+server/spec
+server/dist
