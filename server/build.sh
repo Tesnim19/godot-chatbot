@@ -29,6 +29,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     mkdir dist/mac/main/_internal/server/public
 elif [[ "$OSTYPE" == "cygwin" || "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
     echo "Building for Windows"
+    .\.venv\Scripts\Activate
     pyinstaller --distpath dist/windows \
             --workpath build/windows \
             --specpath spec/windows \
